@@ -388,7 +388,7 @@ endfield-topdown-exporter/
 ### 15.5 项目文件
 
 ```
-C:\Users\abc12\protocol-mapping/
+C:\Users\abc12\protocol-imaging/
 ├─ README.md          (新)
 ├─ .gitignore         (新)
 ├─ requirements.txt

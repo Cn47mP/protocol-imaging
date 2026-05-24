@@ -30,8 +30,8 @@
 ### 安装
 
 ```bash
-git clone https://github.com/your-username/protocol-mapping.git
-cd protocol-mapping
+git clone https://github.com/your-username/protocol-imaging.git
+cd protocol-imaging
 pip install -r requirements.txt
 ```
 
@@ -83,7 +83,7 @@ python -m app.main
 ## 项目结构
 
 ```text
-protocol-mapping/
+protocol-imaging/
 ├─ app/
 │  ├─ main.py
 │  ├─ ui/

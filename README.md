@@ -35,7 +35,7 @@ Python · OpenCV · PySide6 · mss · Pillow · numpy
 ## 项目结构
 
 ```
-protocol-mapping/
+protocol-imaging/
 ├─ app/
 │  ├─ main.py              # 应用入口
 │  ├─ ui/main_window.py    # 主窗口 UI
