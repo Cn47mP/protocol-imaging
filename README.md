@@ -23,6 +23,13 @@ protocol-imaging
 也可以直接运行：
 
 ```bash
+pip install -e .
+protocol-imaging
+```
+
+也可以直接运行：
+
+```bash
 pip install -r requirements.txt
 python -m app.main
 ```
