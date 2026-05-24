@@ -6,18 +6,11 @@
 
 ## 名称释义
 
-- **协议**：终末地工业的核心技术体系，与"协议核心""协议传送""协议回收"同源
 - **映射**：通过协议扫描对基地进行完整成像，将实际布局映射为全景图
 
 ## 工具简介
 
 一个用于《明日方舟：终末地》PC 端基地俯视图导出的外部工具。从游戏画面中采集基地截图，自动或半自动拼接成一张完整的基地全景图，用于查看设备摆放和基地布局。
-
-## 版本命名
-
-- **草本**：手工锚点校正，初步成图
-- **正本**：自动匹配，标准成图
-- **定本**：全功能，可存档编辑
 
 ## 快速开始
 
@@ -30,7 +23,7 @@
 ### 安装
 
 ```bash
-git clone https://github.com/your-username/protocol-imaging.git
+git clone https://github.com/Cn47mP/protocol-imaging.git
 cd protocol-imaging
 pip install -r requirements.txt
 ```
