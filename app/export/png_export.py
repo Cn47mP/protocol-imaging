@@ -2,10 +2,10 @@
 协议映射 · PNG 导出模块
 """
 
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
-from typing import Optional
 
 
 def export_png(image: np.ndarray, output_path: str, quality: int = 95) -> str:

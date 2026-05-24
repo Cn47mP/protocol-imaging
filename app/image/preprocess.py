@@ -24,9 +24,9 @@ def to_grayscale(frame: np.ndarray) -> np.ndarray:
 def normalize_brightness(frame: np.ndarray) -> np.ndarray:
     """亮度归一化"""
     lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    l = cv2.equalizeHist(l)
-    return cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+    lightness, a, b = cv2.split(lab)
+    lightness = cv2.equalizeHist(lightness)
+    return cv2.cvtColor(cv2.merge([lightness, a, b]), cv2.COLOR_LAB2BGR)
 
 
 def denoise(frame: np.ndarray, strength: int = 10) -> np.ndarray:

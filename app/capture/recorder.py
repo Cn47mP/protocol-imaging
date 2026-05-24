@@ -3,10 +3,9 @@
 负责连续采集帧、保存帧序列、管理录制状态
 """
 
-import os
-import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable
+
 from app.capture.window_capture import WindowCapture
 
 
@@ -17,9 +16,9 @@ class Recorder:
         self.capture = capture
         self._recording = False
         self._frames: list = []
-        self._output_dir: Optional[Path] = None
+        self._output_dir: Path | None = None
         self._interval: float = 0.5  # 截图间隔（秒）
-        self._on_frame: Optional[Callable] = None  # 帧回调
+        self._on_frame: Callable | None = None  # 帧回调
 
     @property
     def is_recording(self) -> bool:
@@ -54,7 +53,7 @@ class Recorder:
         self._recording = False
         return self._frames
 
-    def capture_frame(self) -> Optional[object]:
+    def capture_frame(self) -> object | None:
         """捕获一帧并记录"""
         if not self._recording:
             return None

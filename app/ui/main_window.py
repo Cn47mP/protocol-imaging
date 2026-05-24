@@ -2,20 +2,28 @@
 协议映射 · 主窗口
 """
 
+
 import cv2
 import numpy as np
-from pathlib import Path
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QListWidget, QSpinBox,
-    QFileDialog, QMessageBox, QStatusBar, QGroupBox,
-    QSlider, QComboBox,
+    QComboBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QPixmap, QImage
 
-from app.capture.window_capture import WindowCapture
 from app.capture.recorder import Recorder
+from app.capture.window_capture import WindowCapture
 
 
 class MainWindow(QMainWindow):
@@ -270,9 +278,10 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"已导出: {path}")
             return
 
+        import numpy as np
+
         from app.image.align import auto_align
         from app.image.stitch import stitch_sequential
-        import numpy as np
 
         self.statusBar().showMessage("正在拼接...")
         QMessageBox.information(self, "提示",

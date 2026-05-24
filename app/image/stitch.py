@@ -3,20 +3,20 @@
 将多张对齐后的图像合并成一张大图
 """
 
+
 import cv2
 import numpy as np
-from typing import List, Optional, Tuple
 
 
 def warp_and_merge(img: np.ndarray, H: np.ndarray,
-                   canvas_size: Tuple[int, int]) -> np.ndarray:
+                   canvas_size: tuple[int, int]) -> np.ndarray:
     """根据单应性矩阵将图像变换到画布上"""
     warped = cv2.warpPerspective(img, H, canvas_size)
     return warped
 
 
-def compute_canvas_size(images: List[np.ndarray],
-                        homographies: List[np.ndarray]) -> Tuple[int, int]:
+def compute_canvas_size(images: list[np.ndarray],
+                        homographies: list[np.ndarray]) -> tuple[int, int]:
     """计算拼接画布的尺寸"""
     if not images or not homographies:
         return (0, 0)
@@ -40,8 +40,8 @@ def compute_canvas_size(images: List[np.ndarray],
     return (canvas_w, canvas_h)
 
 
-def stitch_sequential(images: List[np.ndarray],
-                      homographies: List[np.ndarray]) -> np.ndarray:
+def stitch_sequential(images: list[np.ndarray],
+                      homographies: list[np.ndarray]) -> np.ndarray:
     """逐帧拼接：将图像按顺序拼接到第一张图的坐标系"""
     if len(images) != len(homographies):
         raise ValueError("图像数量和单应性矩阵数量不匹配")
@@ -59,7 +59,7 @@ def stitch_sequential(images: List[np.ndarray],
 
     # 逐帧拼接
     result = None
-    for i, (img, H) in enumerate(zip(images, homographies)):
+    for i, (img, H) in enumerate(zip(images, homographies, strict=False)):
         # 先变换到全景坐标系，再平移到正区域
         full_H = offset_H @ H if i > 0 else offset_H
 
@@ -76,9 +76,9 @@ def stitch_sequential(images: List[np.ndarray],
 
 
 def compute_offset_homography(
-    images: List[np.ndarray],
-    homographies: List[np.ndarray]
-) -> Tuple:
+    images: list[np.ndarray],
+    homographies: list[np.ndarray]
+) -> tuple:
     """计算偏移矩阵使所有图像落在正坐标区域"""
     if not images or not homographies:
         return (0, 0, 0, 0, None)

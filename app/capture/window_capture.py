@@ -1,14 +1,13 @@
-import cv2
 """
 协议映射 · 窗口截图模块
 使用 mss 捕获指定窗口或屏幕区域
 """
 
+import cv2
 import mss
 import mss.tools
 import numpy as np
 from PIL import Image
-from typing import Optional, Tuple
 
 
 class WindowCapture:
@@ -16,7 +15,7 @@ class WindowCapture:
 
     def __init__(self):
         self.sct = mss.mss()
-        self._monitor: Optional[dict] = None
+        self._monitor: dict | None = None
 
     def list_monitors(self) -> list[dict]:
         """列出所有可用显示器"""
@@ -34,7 +33,7 @@ class WindowCapture:
         """自定义捕获区域（像素坐标）"""
         self._monitor = {"left": left, "top": top, "width": width, "height": height}
 
-    def capture(self) -> Optional[np.ndarray]:
+    def capture(self) -> np.ndarray | None:
         """捕获当前选定区域的截图，返回 BGR numpy 数组（OpenCV 格式）"""
         if self._monitor is None:
             return None
@@ -43,7 +42,7 @@ class WindowCapture:
         img = np.array(sct_img)
         return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
-    def capture_pil(self) -> Optional[Image.Image]:
+    def capture_pil(self) -> Image.Image | None:
         """捕获当前选定区域的截图，返回 PIL Image"""
         bgr = self.capture()
         if bgr is None:

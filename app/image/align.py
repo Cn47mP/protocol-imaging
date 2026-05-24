@@ -3,12 +3,12 @@
 支持自动特征匹配对齐和手动锚点校正
 """
 
+
 import cv2
 import numpy as np
-from typing import Optional, Tuple, List
 
 
-def detect_features(img: np.ndarray, max_features: int = 2000) -> Tuple:
+def detect_features(img: np.ndarray, max_features: int = 2000) -> tuple:
     """检测 ORB 特征点与描述子"""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
     orb = cv2.ORB_create(nfeatures=max_features)
@@ -16,7 +16,7 @@ def detect_features(img: np.ndarray, max_features: int = 2000) -> Tuple:
     return keypoints, descriptors
 
 
-def match_features(desc1, desc2, ratio_thresh: float = 0.75) -> List:
+def match_features(desc1, desc2, ratio_thresh: float = 0.75) -> list:
     """特征点匹配"""
     if desc1 is None or desc2 is None:
         return []
@@ -30,7 +30,7 @@ def match_features(desc1, desc2, ratio_thresh: float = 0.75) -> List:
     return good
 
 
-def estimate_homography(kp1, kp2, matches, reproj_thresh: float = 5.0) -> Optional[np.ndarray]:
+def estimate_homography(kp1, kp2, matches, reproj_thresh: float = 5.0) -> np.ndarray | None:
     """估算单应性矩阵"""
     if len(matches) < 4:
         return None
@@ -41,7 +41,7 @@ def estimate_homography(kp1, kp2, matches, reproj_thresh: float = 5.0) -> Option
 
 
 def auto_align(img_src: np.ndarray, img_dst: np.ndarray,
-               min_matches: int = 10) -> Optional[np.ndarray]:
+               min_matches: int = 10) -> np.ndarray | None:
     """自动对齐：返回 src 到 dst 的单应性矩阵"""
     kp1, desc1 = detect_features(img_src)
     kp2, desc2 = detect_features(img_dst)
@@ -57,8 +57,8 @@ def auto_align(img_src: np.ndarray, img_dst: np.ndarray,
     return H
 
 
-def manual_align(points_src: List[Tuple[float, float]],
-                 points_dst: List[Tuple[float, float]]) -> Optional[np.ndarray]:
+def manual_align(points_src: list[tuple[float, float]],
+                 points_dst: list[tuple[float, float]]) -> np.ndarray | None:
     """手动锚点校正：根据 4+ 对应点计算透视变换"""
     if len(points_src) < 4 or len(points_dst) < 4:
         return None

@@ -3,13 +3,13 @@
 在总图上叠加图层标记
 """
 
+
 import cv2
 import numpy as np
-from typing import List, Tuple, Optional
 
 
 def draw_grid(img: np.ndarray, grid_size: int = 100,
-              color: Tuple[int, int, int] = (100, 100, 100),
+              color: tuple[int, int, int] = (100, 100, 100),
               thickness: int = 1) -> np.ndarray:
     """绘制网格参考线"""
     result = img.copy()
@@ -21,8 +21,8 @@ def draw_grid(img: np.ndarray, grid_size: int = 100,
     return result
 
 
-def draw_label(img: np.ndarray, text: str, position: Tuple[int, int],
-               font_scale: float = 0.6, color: Tuple[int, int, int] = (0, 255, 0),
+def draw_label(img: np.ndarray, text: str, position: tuple[int, int],
+               font_scale: float = 0.6, color: tuple[int, int, int] = (0, 255, 0),
                thickness: int = 2) -> np.ndarray:
     """在图中添加文字标注"""
     result = img.copy()
@@ -38,7 +38,7 @@ def draw_label(img: np.ndarray, text: str, position: Tuple[int, int],
 
 
 def draw_bounding_box(img: np.ndarray, x: int, y: int, w: int, h: int,
-                      color: Tuple[int, int, int] = (0, 255, 0),
+                      color: tuple[int, int, int] = (0, 255, 0),
                       thickness: int = 2) -> np.ndarray:
     """绘制矩形框"""
     result = img.copy()

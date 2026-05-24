@@ -16,6 +16,13 @@
 ## 使用
 
 ```bash
+pip install -e .
+protocol-imaging
+```
+
+也可以直接运行：
+
+```bash
 pip install -r requirements.txt
 python -m app.main
 ```
@@ -52,6 +59,7 @@ python -m app.main
 - 更稳定的多图拼接
 - 标注层编辑
 - 导出参数配置
+- 完整 GUI 工作流
 
 ## 目录约定
 

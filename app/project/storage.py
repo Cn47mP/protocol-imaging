@@ -2,8 +2,8 @@
 协议映射 · 项目持久化
 """
 
-import shutil
 from pathlib import Path
+
 from app.project.model import Project
 
 
