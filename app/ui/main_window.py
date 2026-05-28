@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QImage, QPixmap
+from PySide6.QtGui import QAction, QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -402,6 +402,7 @@ class MainWindow(QMainWindow):
         self._frame_list.setCurrentRow(self._frame_list.count() - 1)
         self._log(f"采集帧 {len(self._frames):04d}。")
         self._update_ui_state()
+        self._refresh_frame_list_status()
 
     def _clear_frames(self) -> None:
         self._frames.clear()
@@ -420,6 +421,21 @@ class MainWindow(QMainWindow):
             self._show_image(self._frames[row], self._preview_label)
             self._tabs.setCurrentIndex(0)
 
+    def _refresh_frame_list_status(self) -> None:
+        """刷新帧列表：已标定的帧显示绿色"""
+        for i in range(self._frame_list.count()):
+            item = self._frame_list.item(i)
+            if i < len(self._homographies):
+                is_calibrated = not np.allclose(
+                    self._homographies[i], np.eye(3), atol=1e-6
+                )
+                if is_calibrated:
+                    item.setForeground(QColor("#44cc44"))
+                    item.setText(f"帧 {i:04d} ✓")
+                else:
+                    item.setForeground(QColor("#b8c0cc"))
+                    item.setText(f"帧 {i:04d}")
+
     # --- 锚点标定 ---
 
     def _open_calibration(self) -> None:
@@ -429,23 +445,27 @@ class MainWindow(QMainWindow):
 
         from app.ui.widgets.calibration_dialog import CalibrationDialog
 
-        # 取当前选中的帧作为源帧，底图为第一帧
         src_idx = max(0, self._frame_list.currentRow())
         base_frame = self._frames[0]
 
         dlg = CalibrationDialog(
-            src_frame=self._frames[src_idx],
+            src_frames=self._frames,
             base_frame=base_frame,
+            homographies=self._homographies,
+            start_index=src_idx,
             parent=self,
         )
         if dlg.exec():
-            H = dlg.homography
-            if H is not None:
-                self._homographies[src_idx] = H
-                self._log(f"帧 {src_idx:04d} 锚点标定完成。")
-                self._stitched_image = None  # 清除旧结果
-                self._result_label.setText("锚点已更新，请重新生成全景图")
-                self._update_ui_state()
+            self._homographies = dlg.all_homographies
+            self._stitched_image = None
+            self._result_label.setText("标定完成，请重新生成全景图")
+            self._refresh_frame_list_status()
+            calibrated = sum(
+                1 for H in self._homographies
+                if not np.allclose(H, np.eye(3), atol=1e-6)
+            )
+            self._log(f"锚点标定完成：{calibrated}/{len(self._homographies)} 帧已标定。")
+            self._update_ui_state()
 
     # --- 拼接与导出 ---
 

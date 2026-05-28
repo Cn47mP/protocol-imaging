@@ -1,6 +1,7 @@
 """
 协议映射 · 锚点标定对话框
 用户点选 4 对锚点 → 计算单应性矩阵 → 实时预览叠图效果
+支持批量逐帧标定：前后帧导航，自动保存每帧结果
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.image.align import manual_align
+from app.image.align import auto_align, manual_align
 
 
 # ── 可点击标注的图片控件 ──
@@ -156,33 +157,51 @@ class ClickableImageLabel(QLabel):
 # ── 标定对话框 ──
 
 class CalibrationDialog(QDialog):
-    """锚点标定对话框：源帧 ←→ 底图 四点对齐"""
+    """锚点标定对话框：源帧 ←→ 底图 四点对齐，支持批量逐帧标定"""
 
     MIN_POINTS = 4
 
     def __init__(
         self,
-        src_frame: np.ndarray,
-        base_frame: np.ndarray,
+        src_frames: list[np.ndarray],       # 全部帧
+        base_frame: np.ndarray,             # 底图（第一帧）
+        homographies: list[np.ndarray],     # 当前所有 homography
+        start_index: int = 0,               # 起始帧索引
         parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("锚点标定")
         self.setMinimumSize(1100, 600)
 
-        self._src_frame = src_frame
+        self._all_frames = src_frames
         self._base_frame = base_frame
-        self._homography: np.ndarray | None = None
+        self._homographies = [H.copy() for H in homographies]  # 可变副本
+        self._current_idx = start_index
+        self._current_homography: np.ndarray | None = None
+        self._src_points: list[tuple[float, float]] = []
+        self._base_points: list[tuple[float, float]] = []
 
         self._build_ui()
         self._connect_signals()
-
-        # 加载图像
-        self._src_label.set_image(src_frame)
-        self._base_label.set_image(base_frame)
+        self._load_frame(self._current_idx)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+
+        # 顶部导航
+        nav = QHBoxLayout()
+        self._prev_btn = QPushButton("◀ 上一帧")
+        nav.addWidget(self._prev_btn)
+        self._frame_label = QLabel("帧 0000 / 0000")
+        self._frame_label.setAlignment(Qt.AlignCenter)
+        nav.addWidget(self._frame_label)
+        self._next_btn = QPushButton("下一帧 ▶")
+        nav.addWidget(self._next_btn)
+        nav.addStretch()
+        self._auto_btn = QPushButton("自动对齐")
+        self._auto_btn.setToolTip("尝试自动特征匹配对齐，失败则保持手动模式")
+        nav.addWidget(self._auto_btn)
+        layout.addLayout(nav)
 
         # 双图区域
         images_layout = QHBoxLayout()
@@ -204,7 +223,7 @@ class CalibrationDialog(QDialog):
         # 底部控制
         bottom = QHBoxLayout()
 
-        self._status_label = QLabel("请在两侧图上各点选 4 个对应锚点（共 8 处点击）")
+        self._status_label = QLabel("请在两侧图上各点选 4 个对应锚点")
         bottom.addWidget(self._status_label)
 
         bottom.addStretch()
@@ -216,12 +235,12 @@ class CalibrationDialog(QDialog):
         self._clear_btn = QPushButton("清除锚点")
         bottom.addWidget(self._clear_btn)
 
-        self._ok_btn = QPushButton("确定")
-        self._ok_btn.setEnabled(False)
-        bottom.addWidget(self._ok_btn)
+        self._apply_btn = QPushButton("应用标定")
+        self._apply_btn.setEnabled(False)
+        bottom.addWidget(self._apply_btn)
 
-        self._cancel_btn = QPushButton("取消")
-        bottom.addWidget(self._cancel_btn)
+        self._ok_btn = QPushButton("完成")
+        bottom.addWidget(self._ok_btn)
 
         layout.addLayout(bottom)
 
@@ -232,14 +251,66 @@ class CalibrationDialog(QDialog):
         self._base_label.point_removed.connect(self._on_point_removed)
         self._preview_check.toggled.connect(self._on_preview_toggled)
         self._clear_btn.clicked.connect(self._clear_points)
+        self._apply_btn.clicked.connect(self._apply_calibration)
+        self._auto_btn.clicked.connect(self._try_auto_align)
+        self._prev_btn.clicked.connect(self._go_prev)
+        self._next_btn.clicked.connect(self._go_next)
         self._ok_btn.clicked.connect(self.accept)
-        self._cancel_btn.clicked.connect(self.reject)
+
+    # ── 帧导航 ──
+
+    def _load_frame(self, index: int) -> None:
+        """加载第 index 帧进入标定界面"""
+        self._current_idx = index
+        frame = self._all_frames[index]
+        self._src_label.set_image(frame)
+        self._base_label.set_image(self._base_frame)
+
+        self._current_homography = None
+        self._src_points = []
+        self._base_points = []
+
+        # 检查是否已有标定数据——尝试从 homography 反推
+        H = self._homographies[index]
+        is_identity = np.allclose(H, np.eye(3), atol=1e-6)
+        if not is_identity:
+            self._current_homography = H
+            self._apply_btn.setEnabled(True)
+            self._preview_check.setEnabled(True)
+            self._preview_check.setChecked(True)
+            self._status_label.setText(f"帧 {index:04d} — 已有标定数据 ✓")
+            self._show_overlay()
+        else:
+            self._preview_check.setChecked(False)
+            self._preview_check.setEnabled(False)
+            self._apply_btn.setEnabled(False)
+            self._status_label.setText(f"帧 {index:04d} — 请在两侧图上各点选 4 个对应锚点")
+
+        self._frame_label.setText(f"帧 {index:04d} / {len(self._all_frames):04d}")
+        self._prev_btn.setEnabled(index > 0)
+        self._next_btn.setEnabled(index < len(self._all_frames) - 1)
+
+    def _go_prev(self) -> None:
+        if self._current_idx > 0:
+            # 如果有未应用的标定，提示
+            if self._current_homography is not None:
+                self._homographies[self._current_idx] = self._current_homography
+            self._load_frame(self._current_idx - 1)
+
+    def _go_next(self) -> None:
+        if self._current_idx < len(self._all_frames) - 1:
+            if self._current_homography is not None:
+                self._homographies[self._current_idx] = self._current_homography
+            self._load_frame(self._current_idx + 1)
 
     # ── 逻辑 ──
 
     def _on_point_added(self, idx: int, x: float, y: float):
+        # 同步两侧点数
         src_count = len(self._src_label.get_points())
         base_count = len(self._base_label.get_points())
+        self._src_points = self._src_label.get_points()
+        self._base_points = self._base_label.get_points()
         self._status_label.setText(
             f"源帧：{src_count}/4 · 底图：{base_count}/4  "
             f"（右键撤销上一个点）"
@@ -247,59 +318,84 @@ class CalibrationDialog(QDialog):
         self._try_compute()
 
     def _on_point_removed(self):
-        src_count = len(self._src_label.get_points())
-        base_count = len(self._base_label.get_points())
+        self._src_points = self._src_label.get_points()
+        self._base_points = self._base_label.get_points()
+        src_count = len(self._src_points)
+        base_count = len(self._base_points)
         self._status_label.setText(
             f"源帧：{src_count}/4 · 底图：{base_count}/4"
         )
-        self._homography = None
-        self._ok_btn.setEnabled(False)
+        self._current_homography = None
+        self._apply_btn.setEnabled(False)
         self._preview_check.setEnabled(False)
         self._preview_check.setChecked(False)
-        # 恢复底图
         self._base_label.set_image(self._base_frame)
 
     def _clear_points(self) -> None:
         self._src_label.clear_points()
         self._base_label.clear_points()
         self._base_label.set_image(self._base_frame)
-        self._homography = None
-        self._ok_btn.setEnabled(False)
+        self._src_points = []
+        self._base_points = []
+        self._current_homography = None
+        self._apply_btn.setEnabled(False)
         self._preview_check.setEnabled(False)
         self._preview_check.setChecked(False)
         self._status_label.setText("请在两侧图上各点选 4 个对应锚点")
 
     def _try_compute(self) -> None:
-        src_pts = self._src_label.get_points()
-        base_pts = self._base_label.get_points()
-
-        if len(src_pts) < self.MIN_POINTS or len(base_pts) < self.MIN_POINTS:
+        if len(self._src_points) < self.MIN_POINTS or len(self._base_points) < self.MIN_POINTS:
             return
 
-        # 使用对应点计算单应性矩阵
-        H = manual_align(src_pts, base_pts)
+        H = manual_align(self._src_points, self._base_points)
         if H is not None:
-            self._homography = H
-            self._ok_btn.setEnabled(True)
+            self._current_homography = H
+            self._apply_btn.setEnabled(True)
             self._preview_check.setEnabled(True)
-            self._preview_check.setChecked(True)  # 自动开启预览
-            self._status_label.setText("锚点标定完成 ✓ — 已开启叠图预览")
+            self._preview_check.setChecked(True)
+            self._status_label.setText("锚点标定完成 ✓ — 已开启叠图预览，点击「应用标定」确认")
         else:
             self._status_label.setText("计算失败，请重新选点")
 
+    def _try_auto_align(self) -> None:
+        """尝试自动特征匹配"""
+        frame = self._all_frames[self._current_idx]
+        H = auto_align(frame, self._base_frame)
+        if H is not None:
+            self._current_homography = H
+            self._apply_btn.setEnabled(True)
+            self._preview_check.setEnabled(True)
+            self._preview_check.setChecked(True)
+            self._show_overlay()
+            self._status_label.setText(f"自动对齐成功 ✓ — 点击「应用标定」确认")
+        else:
+            self._status_label.setText("自动对齐失败，请手动选点")
+
+    def _apply_calibration(self) -> None:
+        """保存当前帧标定结果"""
+        if self._current_homography is not None:
+            self._homographies[self._current_idx] = self._current_homography
+            self._apply_btn.setEnabled(False)
+            self._status_label.setText(f"帧 {self._current_idx:04d} 标定已应用 ✓")
+            # 自动跳到下一帧
+            if self._current_idx < len(self._all_frames) - 1:
+                self._go_next()
+
     def _on_preview_toggled(self, checked: bool) -> None:
-        if checked and self._homography is not None:
+        if checked and self._current_homography is not None:
             self._show_overlay()
         elif not checked:
             self._base_label.set_image(self._base_frame)
 
     def _show_overlay(self) -> None:
         """将源帧按 homography 变换后叠加到底图上"""
-        if self._homography is None:
+        frame = self._all_frames[self._current_idx]
+        H = self._current_homography
+        if H is None:
             return
 
         h, w = self._base_frame.shape[:2]
-        warped = cv2.warpPerspective(self._src_frame, self._homography, (w, h))
+        warped = cv2.warpPerspective(frame, H, (w, h))
 
         # 50% 透明度叠加
         overlay = cv2.addWeighted(self._base_frame, 0.5, warped, 0.5, 0)
@@ -308,6 +404,21 @@ class CalibrationDialog(QDialog):
         # 恢复锚点标记
         self._base_label.set_points(self._base_label.get_points())
 
+    # ── 公共接口 ──
+
     @property
     def homography(self) -> np.ndarray | None:
-        return self._homography
+        """当前帧的单应性矩阵"""
+        return self._current_homography
+
+    @property
+    def all_homographies(self) -> list[np.ndarray]:
+        """全部帧的单应性矩阵"""
+        # 提交当前未应用的
+        if self._current_homography is not None:
+            self._homographies[self._current_idx] = self._current_homography
+        return self._homographies
+
+    @property
+    def current_index(self) -> int:
+        return self._current_idx
