@@ -252,15 +252,35 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        # 标注工具栏
+        toolbar = QHBoxLayout()
+
         self._grid_check = QCheckBox("网格参考线")
         self._grid_check.toggled.connect(self._on_grid_toggled)
-        layout.addWidget(self._grid_check)
+        toolbar.addWidget(self._grid_check)
 
-        self._result_label = QLabel("生成全景图后显示结果")
-        self._result_label.setAlignment(Qt.AlignCenter)
+        toolbar.addWidget(QLabel("管线类型："))
+
+        self._pipe_type_combo = QComboBox()
+        self._pipe_type_combo.addItems(list(PIPE_PRESETS.keys()))
+        self._pipe_type_combo.setCurrentText("上水")
+        self._pipe_type_combo.currentTextChanged.connect(self._on_pipe_type_changed)
+        toolbar.addWidget(self._pipe_type_combo)
+
+        toolbar.addStretch()
+
+        self._btn_clear_annotations = QPushButton("清除标注")
+        self._btn_clear_annotations.clicked.connect(self._clear_annotations)
+        toolbar.addWidget(self._btn_clear_annotations)
+
+        layout.addLayout(toolbar)
+
+        # 标注叠加层
+        self._result_label = AnnotationOverlay()
+        self._result_label.setText("生成全景图后显示结果")
         self._result_label.setMinimumSize(820, 560)
-        self._result_label.setFrameShape(QFrame.StyledPanel)
         self._result_label.setStyleSheet("background: #101216; color: #b8c0cc;")
+        self._result_label.data_changed.connect(self._on_annotation_changed)
         layout.addWidget(self._result_label)
         return tab
 
@@ -332,6 +352,10 @@ class MainWindow(QMainWindow):
             self._update_window_title()
             self._update_ui_state()
             self._log(f"已打开项目：{project.name}（{len(self._frames)} 帧）")
+
+            # 恢复标注数据
+            self._annotation_labels = [l.to_dict() for l in project.labels]
+            self._annotation_pipes = [p.to_dict() for p in project.pipes]
 
             # 如果有 homography，自动生成全景预览
             if self._homographies:
@@ -598,7 +622,7 @@ class MainWindow(QMainWindow):
                 self._log(f"拼接失败：{exc}")
                 return
 
-        self._show_image(self._stitched_image, self._result_label)
+        self._show_stitched_result()
         self._tabs.setCurrentIndex(1)
         cal_count = sum(1 for H in self._homographies if not np.allclose(H, np.eye(3), atol=1e-6))
         self._log(f"全景图已生成（{cal_count}/{len(self._frames)} 帧已对齐）。")
