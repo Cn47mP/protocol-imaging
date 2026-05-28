@@ -749,3 +749,51 @@ class MainWindow(QMainWindow):
         self._preview_timer.stop()
         self.capture.release()
         super().closeEvent(event)
+
+    def _load_project_quiet(self, path: Path) -> None:
+        """静默加载项目（启动时 --project 参数调用），失败弹窗."""
+        try:
+            # 支持 project.json 路径或项目目录
+            if path.is_file():
+                project_dir = path.parent
+            else:
+                project_dir = path
+            storage = ProjectStorage(str(project_dir))
+            project, frames = storage.load()
+
+            self._frames = frames
+            self._homographies = [
+                np.array(fi.homography, dtype=np.float64)
+                if fi.homography else np.eye(3, dtype=np.float64)
+                for fi in project.frames
+            ]
+            self._stitched_image = None
+            self._project_path = project_dir
+            self.recorder.clear()
+
+            self._frame_list.clear()
+            for fi in project.frames:
+                self._frame_list.addItem(f"帧 {fi.index:04d}")
+            self._frame_label.setText(f"已采集：{len(self._frames)} 帧")
+
+            if self._frames:
+                self._show_image(self._frames[0], self._preview_label)
+                self._tabs.setCurrentIndex(0)
+                self._frame_list.setCurrentRow(0)
+
+            self._update_window_title()
+            self._update_ui_state()
+            self._log(f"已加载项目：{project.name}（{len(self._frames)} 帧）")
+
+            # 恢复标注
+            from dataclasses import asdict as _asdict
+            self._annotation_labels = [_asdict(l) for l in project.labels]
+            self._annotation_pipes = [_asdict(p) for p in project.pipes]
+
+        except Exception as exc:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self, "加载失败",
+                f"无法加载项目：\n{exc}",
+            )
+

@@ -28,6 +28,9 @@ dev = [
 [project.scripts]
 protocol-imaging = "app.main:main"
 
+[project.gui-scripts]
+protocol-imaging-gui = "app.main:main"
+
 [tool.setuptools.packages.find]
 include = ["app*"]
 
