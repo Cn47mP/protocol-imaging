@@ -1,10 +1,13 @@
 """
 协议映射 · 项目模型
-保存截图帧、锚点、标注信息的项目文件
+保存截图帧、锚点、单应性矩阵、标注信息的项目文件
 """
+
+from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -19,10 +22,11 @@ class AnchorPoint:
 @dataclass
 class FrameInfo:
     """帧信息"""
-    path: str       # 帧文件路径
+    path: str       # 帧文件相对路径（相对于项目目录）
     index: int      # 帧序号
     width: int
     height: int
+    homography: list[list[float]] | None = None  # 3×3 单应性矩阵
 
 
 @dataclass
@@ -39,9 +43,10 @@ class Project:
     name: str = "协议映射项目"
     version: str = "1.0"
     frames: list[FrameInfo] = field(default_factory=list)
-    anchors: list[AnchorPoint] = field(default_factory=list)
     annotations: list[Annotation] = field(default_factory=list)
     output_path: str = ""
+    canvas_width: int = 0
+    canvas_height: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -53,13 +58,9 @@ class Project:
             frame if isinstance(frame, FrameInfo) else FrameInfo(**frame)
             for frame in payload.get("frames", [])
         ]
-        payload["anchors"] = [
-            anchor if isinstance(anchor, AnchorPoint) else AnchorPoint(**anchor)
-            for anchor in payload.get("anchors", [])
-        ]
         payload["annotations"] = [
-            annotation if isinstance(annotation, Annotation) else Annotation(**annotation)
-            for annotation in payload.get("annotations", [])
+            a if isinstance(a, Annotation) else Annotation(**a)
+            for a in payload.get("annotations", [])
         ]
         return cls(**payload)
 

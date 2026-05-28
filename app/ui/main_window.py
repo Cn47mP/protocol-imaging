@@ -34,8 +34,10 @@ from PySide6.QtWidgets import (
 from app.capture.recorder import Recorder
 from app.capture.window_capture import WindowCapture
 from app.export.png_export import export_png
-from app.image.align import auto_align
+from app.image.align import auto_align, manual_align
 from app.image.stitch import stitch_sequential
+from app.project.model import FrameInfo, Project
+from app.project.storage import ProjectStorage
 
 
 class MainWindow(QMainWindow):
@@ -50,6 +52,7 @@ class MainWindow(QMainWindow):
         self.recorder = Recorder(self.capture)
 
         self._frames: list[np.ndarray] = []
+        self._homographies: list[np.ndarray] = []  # 每帧的单应性矩阵
         self._stitched_image: np.ndarray | None = None
         self._project_path: Path | None = None
         self._preview_active = False
@@ -76,12 +79,16 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._act_new)
 
         self._act_open = QAction("打开项目...", self)
-        self._act_open.triggered.connect(self._open_project_placeholder)
+        self._act_open.triggered.connect(self._open_project)
         file_menu.addAction(self._act_open)
 
-        self._act_save = QAction("保存项目...", self)
-        self._act_save.triggered.connect(self._save_project_placeholder)
+        self._act_save = QAction("保存项目", self)
+        self._act_save.triggered.connect(self._save_project)
         file_menu.addAction(self._act_save)
+
+        self._act_save_as = QAction("另存为...", self)
+        self._act_save_as.triggered.connect(self._save_project_as)
+        file_menu.addAction(self._act_save_as)
 
         file_menu.addSeparator()
 
@@ -152,7 +159,7 @@ class MainWindow(QMainWindow):
         pipeline_group = QGroupBox("处理流程")
         pipeline_layout = QVBoxLayout(pipeline_group)
         self._btn_align = QPushButton("锚点标定")
-        self._btn_align.clicked.connect(self._open_align_placeholder)
+        self._btn_align.clicked.connect(self._open_calibration)
         pipeline_layout.addWidget(self._btn_align)
         self._btn_stitch = QPushButton("生成全景图")
         self._btn_stitch.clicked.connect(self._stitch_frames)
@@ -212,6 +219,7 @@ class MainWindow(QMainWindow):
         if self.recorder.is_recording:
             return
         self._frames.clear()
+        self._homographies.clear()
         self.recorder.clear()
         self._stitched_image = None
         self._project_path = None
@@ -219,14 +227,116 @@ class MainWindow(QMainWindow):
         self._frame_label.setText("已采集：0 帧")
         self._preview_label.setText("请选择捕获源并开启预览")
         self._result_label.setText("生成全景图后显示结果")
+        self._update_window_title()
         self._update_ui_state()
         self._log("已新建空项目。")
 
-    def _open_project_placeholder(self) -> None:
-        QMessageBox.information(self, "打开项目", "项目文件保存 / 加载将在后续步骤接入。")
+    def _open_project(self) -> None:
+        if self.recorder.is_recording:
+            return
 
-    def _save_project_placeholder(self) -> None:
-        QMessageBox.information(self, "保存项目", "项目文件保存 / 加载将在后续步骤接入。")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "打开项目",
+            "",
+            "协议映射项目 (project.json);;所有文件 (*)",
+        )
+        if not path:
+            return
+
+        try:
+            project_dir = str(Path(path).parent)
+            storage = ProjectStorage(project_dir)
+            project, frames = storage.load()
+
+            self._frames = frames
+            self._homographies = [
+                np.array(fi.homography, dtype=np.float64)
+                if fi.homography else np.eye(3, dtype=np.float64)
+                for fi in project.frames
+            ]
+            self._stitched_image = None
+            self._project_path = Path(project_dir)
+            self.recorder.clear()
+
+            self._frame_list.clear()
+            for fi in project.frames:
+                self._frame_list.addItem(f"帧 {fi.index:04d}")
+            self._frame_label.setText(f"已采集：{len(self._frames)} 帧")
+
+            # 显示第一帧
+            if self._frames:
+                self._show_image(self._frames[0], self._preview_label)
+                self._tabs.setCurrentIndex(0)
+                self._frame_list.setCurrentRow(0)
+
+            self._update_window_title()
+            self._update_ui_state()
+            self._log(f"已打开项目：{project.name}（{len(self._frames)} 帧）")
+
+            # 如果有 homography，自动生成全景预览
+            if self._homographies:
+                self._stitch_from_homographies()
+
+        except Exception as exc:
+            QMessageBox.warning(self, "打开失败", f"无法打开项目：{exc}")
+            self._log(f"打开项目失败：{exc}")
+
+    def _save_project(self) -> None:
+        if not self._frames:
+            QMessageBox.warning(self, "提示", "没有可保存的数据。")
+            return
+
+        if self._project_path is None:
+            self._save_project_as()
+            return
+
+        self._do_save(self._project_path)
+
+    def _save_project_as(self) -> None:
+        if not self._frames:
+            QMessageBox.warning(self, "提示", "没有可保存的数据。")
+            return
+
+        path = QFileDialog.getExistingDirectory(self, "选择项目保存目录")
+        if not path:
+            return
+
+        self._do_save(Path(path))
+
+    def _do_save(self, project_dir: Path) -> None:
+        try:
+            # 构建 Project 模型
+            project = Project(name=project_dir.name)
+            for i, (frame, H) in enumerate(zip(self._frames, self._homographies, strict=False)):
+                h_list = H.tolist() if H is not None else None
+                project.frames.append(FrameInfo(
+                    path="",
+                    index=i,
+                    width=frame.shape[1],
+                    height=frame.shape[0],
+                    homography=h_list,
+                ))
+
+            if self._stitched_image is not None:
+                project.canvas_width = self._stitched_image.shape[1]
+                project.canvas_height = self._stitched_image.shape[0]
+
+            storage = ProjectStorage(str(project_dir))
+            storage.save(project, self._frames)
+
+            self._project_path = project_dir
+            self._update_window_title()
+            self._log(f"项目已保存：{project_dir}")
+        except Exception as exc:
+            QMessageBox.warning(self, "保存失败", f"无法保存项目：{exc}")
+            self._log(f"保存项目失败：{exc}")
+
+    def _update_window_title(self) -> None:
+        if self._project_path:
+            self.setWindowTitle(f"协议映射 — {self._project_path.name}")
+        else:
+            self.setWindowTitle("协议映射")
 
     # --- 采集 ---
 
@@ -286,6 +396,7 @@ class MainWindow(QMainWindow):
         if frame is None:
             return
         self._frames.append(frame)
+        self._homographies.append(np.eye(3, dtype=np.float64))  # 默认单位矩阵
         self._frame_label.setText(f"已采集：{len(self._frames)} 帧")
         self._frame_list.addItem(f"帧 {len(self._frames):04d}")
         self._frame_list.setCurrentRow(self._frame_list.count() - 1)
@@ -294,6 +405,7 @@ class MainWindow(QMainWindow):
 
     def _clear_frames(self) -> None:
         self._frames.clear()
+        self._homographies.clear()
         self.recorder.clear()
         self._stitched_image = None
         self._frame_list.clear()
@@ -308,28 +420,57 @@ class MainWindow(QMainWindow):
             self._show_image(self._frames[row], self._preview_label)
             self._tabs.setCurrentIndex(0)
 
-    # --- 拼接与导出 ---
+    # --- 锚点标定 ---
 
-    def _open_align_placeholder(self) -> None:
-        QMessageBox.information(self, "锚点标定", "锚点标定面板将在后续步骤实现。")
+    def _open_calibration(self) -> None:
+        if not self._frames:
+            QMessageBox.warning(self, "提示", "没有可标定的帧。")
+            return
+
+        from app.ui.widgets.calibration_dialog import CalibrationDialog
+
+        # 取当前选中的帧作为源帧，底图为第一帧
+        src_idx = max(0, self._frame_list.currentRow())
+        base_frame = self._frames[0]
+
+        dlg = CalibrationDialog(
+            src_frame=self._frames[src_idx],
+            base_frame=base_frame,
+            parent=self,
+        )
+        if dlg.exec():
+            H = dlg.homography
+            if H is not None:
+                self._homographies[src_idx] = H
+                self._log(f"帧 {src_idx:04d} 锚点标定完成。")
+                self._stitched_image = None  # 清除旧结果
+                self._result_label.setText("锚点已更新，请重新生成全景图")
+                self._update_ui_state()
+
+    # --- 拼接与导出 ---
 
     def _stitch_frames(self) -> None:
         if not self._frames:
             QMessageBox.warning(self, "提示", "没有可拼接的帧。")
             return
+
+        self._stitch_from_homographies()
+
+    def _stitch_from_homographies(self) -> None:
+        """使用已有的 homographies 拼接帧"""
+        if not self._frames:
+            return
+
         if len(self._frames) == 1:
             self._stitched_image = self._frames[0].copy()
         else:
-            self._log("开始自动拼接。")
-            base = self._frames[0]
-            homographies = [np.eye(3, dtype=np.float64)]
-            for index, frame in enumerate(self._frames[1:], start=2):
-                matrix = auto_align(frame, base)
-                if matrix is None:
-                    self._log(f"帧 {index:04d} 自动对齐失败，沿用上一帧位置。")
-                    matrix = homographies[-1]
-                homographies.append(matrix)
-            self._stitched_image = stitch_sequential(self._frames, homographies)
+            self._log("开始拼接。")
+            try:
+                self._stitched_image = stitch_sequential(self._frames, self._homographies)
+            except Exception as exc:
+                QMessageBox.warning(self, "拼接失败", f"{exc}")
+                self._log(f"拼接失败：{exc}")
+                return
 
         self._show_image(self._stitched_image, self._result_label)
         self._tabs.setCurrentIndex(1)
@@ -394,6 +535,7 @@ class MainWindow(QMainWindow):
         recording = self.recorder.is_recording
         has_frames = bool(self._frames)
         has_result = self._stitched_image is not None
+        has_project = self._project_path is not None
 
         self._btn_preview.setEnabled(not recording)
         self._btn_start.setEnabled(not recording and self._monitor_combo.count() > 0)
@@ -402,6 +544,8 @@ class MainWindow(QMainWindow):
         self._btn_align.setEnabled(has_frames and not recording)
         self._btn_stitch.setEnabled(has_frames and not recording)
         self._btn_export.setEnabled((has_frames or has_result) and not recording)
+        self._act_save.setEnabled(has_frames and not recording)
+        self._act_save_as.setEnabled(has_frames and not recording)
         self._status_label.setText("采集中" if recording else "就绪")
 
     def _log(self, message: str) -> None:
