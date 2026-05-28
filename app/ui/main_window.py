@@ -354,8 +354,9 @@ class MainWindow(QMainWindow):
             self._log(f"已打开项目：{project.name}（{len(self._frames)} 帧）")
 
             # 恢复标注数据
-            self._annotation_labels = [l.to_dict() for l in project.labels]
-            self._annotation_pipes = [p.to_dict() for p in project.pipes]
+            from dataclasses import asdict as _asdict
+            self._annotation_labels = [_asdict(l) for l in project.labels]
+            self._annotation_pipes = [_asdict(p) for p in project.pipes]
 
             # 如果有 homography，自动生成全景预览
             if self._homographies:
@@ -391,7 +392,7 @@ class MainWindow(QMainWindow):
         try:
             # 构建 Project 模型
             project = Project(name=project_dir.name)
-            for i, (frame, H) in enumerate(zip(self._frames, self._homographies, strict=False)):
+            for i, (frame, H) in enumerate(zip(self._frames, self._homographies)):
                 h_list = H.tolist() if H is not None else None
                 project.frames.append(FrameInfo(
                     path="",
@@ -479,12 +480,18 @@ class MainWindow(QMainWindow):
         self._update_ui_state()
 
     def _on_preview_tick(self) -> None:
-        frame = self.capture.capture()
+        try:
+            frame = self.capture.capture()
+        except Exception:
+            return
         if frame is not None:
             self._show_image(frame, self._preview_label)
 
     def _on_capture_tick(self) -> None:
-        frame = self.recorder.capture_frame()
+        try:
+            frame = self.recorder.capture_frame()
+        except Exception:
+            return
         if frame is None:
             return
         frame = self._preprocess_frame(frame)
@@ -604,7 +611,7 @@ class MainWindow(QMainWindow):
             # 自动补全未标定帧
             base = self._frames[0]
             auto_count = 0
-            for i, (frame, H) in enumerate(zip(self._frames, self._homographies, strict=False)):
+            for i, (frame, H) in enumerate(zip(self._frames, self._homographies)):
                 if np.allclose(H, np.eye(3), atol=1e-6) and i > 0:
                     auto_H = auto_align(frame, base)
                     if auto_H is not None:
@@ -644,8 +651,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        # 获取含标注的图像
-        self._result_label.set_image(self._stitched_image)
+        # 获取含标注的图像（_show_stitched_result 已加载标注数据）
         display = self._result_label.get_annotated_image()
         if display is None:
             display = self._stitched_image

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 协议映射 · 入口
 """

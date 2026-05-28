@@ -44,11 +44,11 @@ class ProjectStorage:
     # ── 保存 ──
 
     def save(self, project: Project, frames: list[np.ndarray] | None = None) -> Path:
-        """保存项目：写入 JSON 元数据 + 导出帧 PNG"""
+        """保存项目：导出帧 PNG + 写入 JSON 元数据"""
         self.init_dir()
-        project.save(str(self.metadata_path))
         if frames:
             self._save_frame_images(frames, project)
+        project.save(str(self.metadata_path))
         return self.metadata_path
 
     def _save_frame_images(self, frames: list[np.ndarray], project: Project) -> None:

@@ -48,18 +48,12 @@ def stitch_sequential(images: list[np.ndarray],
     if len(images) == 0:
         return np.zeros((1, 1, 3), dtype=np.uint8)
 
-    # 计算画布尺寸
-    canvas_w, canvas_h = compute_canvas_size(images, homographies)
-
-    # 偏移矩阵：将坐标平移到非负区域
-    _, _, _, _, offset_H = compute_offset_homography(images, homographies)
-
-    if offset_H is None:
-        return images[0]
+    # 偏移矩阵：将坐标平移到非负区域（同时得到画布尺寸）
+    _, _, canvas_w, canvas_h, offset_H = compute_offset_homography(images, homographies)
 
     # 逐帧拼接
     result = None
-    for i, (img, H) in enumerate(zip(images, homographies, strict=False)):
+    for i, (img, H) in enumerate(zip(images, homographies)):
         # 先变换到全景坐标系，再平移到正区域
         full_H = offset_H @ H if i > 0 else offset_H
 
