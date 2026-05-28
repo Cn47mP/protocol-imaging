@@ -11,6 +11,7 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -35,6 +36,8 @@ from app.capture.recorder import Recorder
 from app.capture.window_capture import WindowCapture
 from app.export.png_export import export_png
 from app.image.align import auto_align, manual_align
+from app.image.annotate import draw_grid
+from app.image.preprocess import crop_ui, normalize_brightness
 from app.image.stitch import stitch_sequential
 from app.project.model import FrameInfo, Project
 from app.project.storage import ProjectStorage
@@ -56,6 +59,13 @@ class MainWindow(QMainWindow):
         self._stitched_image: np.ndarray | None = None
         self._project_path: Path | None = None
         self._preview_active = False
+        # 预处理参数
+        self._crop_top: int = 0
+        self._crop_bottom: int = 0
+        self._crop_left: int = 0
+        self._crop_right: int = 0
+        self._normalize_enabled: bool = False
+        self._grid_enabled: bool = False
 
         self._capture_timer = QTimer(self)
         self._capture_timer.timeout.connect(self._on_capture_tick)
@@ -144,6 +154,47 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(capture_group)
 
+        preprocess_group = QGroupBox("预处理")
+        preprocess_layout = QFormLayout(preprocess_group)
+
+        crop_row = QHBoxLayout()
+        self._crop_top_spin = QSpinBox()
+        self._crop_top_spin.setRange(0, 500)
+        self._crop_top_spin.setPrefix("上 ")
+        self._crop_top_spin.setSuffix("px")
+        self._crop_top_spin.valueChanged.connect(self._on_crop_changed)
+        crop_row.addWidget(self._crop_top_spin)
+
+        self._crop_bottom_spin = QSpinBox()
+        self._crop_bottom_spin.setRange(0, 500)
+        self._crop_bottom_spin.setPrefix("下 ")
+        self._crop_bottom_spin.setSuffix("px")
+        self._crop_bottom_spin.valueChanged.connect(self._on_crop_changed)
+        crop_row.addWidget(self._crop_bottom_spin)
+        preprocess_layout.addRow("裁剪", crop_row)
+
+        crop_row2 = QHBoxLayout()
+        self._crop_left_spin = QSpinBox()
+        self._crop_left_spin.setRange(0, 500)
+        self._crop_left_spin.setPrefix("左 ")
+        self._crop_left_spin.setSuffix("px")
+        self._crop_left_spin.valueChanged.connect(self._on_crop_changed)
+        crop_row2.addWidget(self._crop_left_spin)
+
+        self._crop_right_spin = QSpinBox()
+        self._crop_right_spin.setRange(0, 500)
+        self._crop_right_spin.setPrefix("右 ")
+        self._crop_right_spin.setSuffix("px")
+        self._crop_right_spin.valueChanged.connect(self._on_crop_changed)
+        crop_row2.addWidget(self._crop_right_spin)
+        preprocess_layout.addRow("", crop_row2)
+
+        self._normalize_check = QCheckBox("亮度归一化")
+        self._normalize_check.toggled.connect(self._on_normalize_toggled)
+        preprocess_layout.addRow(self._normalize_check)
+
+        layout.addWidget(preprocess_group)
+
         frames_group = QGroupBox("帧序列")
         frames_layout = QVBoxLayout(frames_group)
         self._frame_label = QLabel("已采集：0 帧")
@@ -197,6 +248,11 @@ class MainWindow(QMainWindow):
     def _build_stitch_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
+
+        self._grid_check = QCheckBox("网格参考线")
+        self._grid_check.toggled.connect(self._on_grid_toggled)
+        layout.addWidget(self._grid_check)
+
         self._result_label = QLabel("生成全景图后显示结果")
         self._result_label.setAlignment(Qt.AlignCenter)
         self._result_label.setMinimumSize(820, 560)
@@ -395,6 +451,7 @@ class MainWindow(QMainWindow):
         frame = self.recorder.capture_frame()
         if frame is None:
             return
+        frame = self._preprocess_frame(frame)
         self._frames.append(frame)
         self._homographies.append(np.eye(3, dtype=np.float64))  # 默认单位矩阵
         self._frame_label.setText(f"已采集：{len(self._frames)} 帧")
@@ -415,6 +472,29 @@ class MainWindow(QMainWindow):
         self._result_label.setText("生成全景图后显示结果")
         self._log("已清空帧序列。")
         self._update_ui_state()
+
+    def _on_crop_changed(self) -> None:
+        self._crop_top = self._crop_top_spin.value()
+        self._crop_bottom = self._crop_bottom_spin.value()
+        self._crop_left = self._crop_left_spin.value()
+        self._crop_right = self._crop_right_spin.value()
+
+    def _on_normalize_toggled(self, checked: bool) -> None:
+        self._normalize_enabled = checked
+
+    def _on_grid_toggled(self, checked: bool) -> None:
+        self._grid_enabled = checked
+        if self._stitched_image is not None:
+            self._show_stitched_result()
+
+    def _preprocess_frame(self, frame):
+        result = frame
+        if any([self._crop_top, self._crop_bottom, self._crop_left, self._crop_right]):
+            result = crop_ui(result, self._crop_top, self._crop_bottom,
+                            self._crop_left, self._crop_right)
+        if self._normalize_enabled:
+            result = normalize_brightness(result)
+        return result
 
     def _on_frame_selected(self, row: int) -> None:
         if 0 <= row < len(self._frames):
@@ -477,7 +557,7 @@ class MainWindow(QMainWindow):
         self._stitch_from_homographies()
 
     def _stitch_from_homographies(self) -> None:
-        """使用已有的 homographies 拼接帧"""
+        """使用已有的 homographies 拼接帧，未标定帧自动尝试对齐"""
         if not self._frames:
             return
 
@@ -485,6 +565,20 @@ class MainWindow(QMainWindow):
             self._stitched_image = self._frames[0].copy()
         else:
             self._log("开始拼接。")
+            # 自动补全未标定帧
+            base = self._frames[0]
+            auto_count = 0
+            for i, (frame, H) in enumerate(zip(self._frames, self._homographies, strict=False)):
+                if np.allclose(H, np.eye(3), atol=1e-6) and i > 0:
+                    auto_H = auto_align(frame, base)
+                    if auto_H is not None:
+                        self._homographies[i] = auto_H
+                        auto_count += 1
+
+            if auto_count:
+                self._log(f"自动对齐：{auto_count} 帧")
+                self._refresh_frame_list_status()
+
             try:
                 self._stitched_image = stitch_sequential(self._frames, self._homographies)
             except Exception as exc:
@@ -494,7 +588,8 @@ class MainWindow(QMainWindow):
 
         self._show_image(self._stitched_image, self._result_label)
         self._tabs.setCurrentIndex(1)
-        self._log("全景图已生成。")
+        cal_count = sum(1 for H in self._homographies if not np.allclose(H, np.eye(3), atol=1e-6))
+        self._log(f"全景图已生成（{cal_count}/{len(self._frames)} 帧已对齐）。")
         self._update_ui_state()
 
     def _export_png(self) -> None:
@@ -513,7 +608,10 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        export_png(self._stitched_image, path)
+        display = self._stitched_image
+        if self._grid_enabled:
+            display = draw_grid(display, grid_size=200)
+        export_png(display, path)
         self._log(f"已导出：{path}")
 
     # --- 辅助 ---
@@ -550,6 +648,14 @@ class MainWindow(QMainWindow):
             QImage.Format_RGB888,
         ).copy()
         label.setPixmap(QPixmap.fromImage(qimage))
+
+    def _show_stitched_result(self) -> None:
+        if self._stitched_image is None:
+            return
+        display = self._stitched_image
+        if self._grid_enabled:
+            display = draw_grid(display, grid_size=200)
+        self._show_image(display, self._result_label)
 
     def _update_ui_state(self) -> None:
         recording = self.recorder.is_recording
