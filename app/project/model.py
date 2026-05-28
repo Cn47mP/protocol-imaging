@@ -1,6 +1,6 @@
 """
 协议映射 · 项目模型
-保存截图帧、锚点、单应性矩阵、标注信息的项目文件
+保存截图帧、单应性矩阵、标注信息的项目文件
 """
 
 from __future__ import annotations
@@ -11,30 +11,31 @@ from pathlib import Path
 
 
 @dataclass
-class AnchorPoint:
-    """锚点坐标"""
-    src_x: float
-    src_y: float
-    dst_x: float
-    dst_y: float
-
-
-@dataclass
 class FrameInfo:
     """帧信息"""
     path: str       # 帧文件相对路径（相对于项目目录）
     index: int      # 帧序号
     width: int
     height: int
-    homography: list[list[float]] | None = None  # 3×3 单应性矩阵
+    homography: list[list[float]] | None = None  # 3x3 单应性矩阵
 
 
 @dataclass
-class Annotation:
-    """标注"""
+class MapLabel:
+    """地图标注标签"""
+    x: float
+    y: float
     text: str
-    x: int
-    y: int
+    color: str = "#44ff44"  # hex 颜色
+
+
+@dataclass
+class PipeSegment:
+    """暗管线段"""
+    points: list[list[float]]  # [[x, y], ...] 像素坐标
+    color: str = "#4488ff"     # hex 颜色
+    label: str = ""             # 管线类型名称
+    thickness: int = 2
 
 
 @dataclass
@@ -43,7 +44,8 @@ class Project:
     name: str = "协议映射项目"
     version: str = "1.0"
     frames: list[FrameInfo] = field(default_factory=list)
-    annotations: list[Annotation] = field(default_factory=list)
+    labels: list[MapLabel] = field(default_factory=list)
+    pipes: list[PipeSegment] = field(default_factory=list)
     output_path: str = ""
     canvas_width: int = 0
     canvas_height: int = 0
@@ -58,9 +60,13 @@ class Project:
             frame if isinstance(frame, FrameInfo) else FrameInfo(**frame)
             for frame in payload.get("frames", [])
         ]
-        payload["annotations"] = [
-            a if isinstance(a, Annotation) else Annotation(**a)
-            for a in payload.get("annotations", [])
+        payload["labels"] = [
+            lbl if isinstance(lbl, MapLabel) else MapLabel(**lbl)
+            for lbl in payload.get("labels", [])
+        ]
+        payload["pipes"] = [
+            p if isinstance(p, PipeSegment) else PipeSegment(**p)
+            for p in payload.get("pipes", [])
         ]
         return cls(**payload)
 

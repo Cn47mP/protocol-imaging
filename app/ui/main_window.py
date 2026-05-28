@@ -39,6 +39,7 @@ from app.image.align import auto_align, manual_align
 from app.image.annotate import draw_grid
 from app.image.preprocess import crop_ui, normalize_brightness
 from app.image.stitch import stitch_sequential
+from app.ui.widgets.annotation_overlay import AnnotationOverlay, PipeData, LabelData, PIPE_PRESETS
 from app.project.model import FrameInfo, Project
 from app.project.storage import ProjectStorage
 
@@ -66,6 +67,8 @@ class MainWindow(QMainWindow):
         self._crop_right: int = 0
         self._normalize_enabled: bool = False
         self._grid_enabled: bool = False
+        self._annotation_pipes: list = []
+        self._annotation_labels: list = []
 
         self._capture_timer = QTimer(self)
         self._capture_timer.timeout.connect(self._on_capture_tick)
@@ -378,6 +381,15 @@ class MainWindow(QMainWindow):
                 project.canvas_width = self._stitched_image.shape[1]
                 project.canvas_height = self._stitched_image.shape[0]
 
+            # 保存标注
+            from app.project.model import MapLabel, PipeSegment
+            project.labels = [
+                MapLabel(**l) for l in self._annotation_labels
+            ]
+            project.pipes = [
+                PipeSegment(**p) for p in self._annotation_pipes
+            ]
+
             storage = ProjectStorage(str(project_dir))
             storage.save(project, self._frames)
 
@@ -608,7 +620,11 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        display = self._stitched_image
+        # 获取含标注的图像
+        self._result_label.set_image(self._stitched_image)
+        display = self._result_label.get_annotated_image()
+        if display is None:
+            display = self._stitched_image
         if self._grid_enabled:
             display = draw_grid(display, grid_size=200)
         export_png(display, path)
@@ -655,7 +671,27 @@ class MainWindow(QMainWindow):
         display = self._stitched_image
         if self._grid_enabled:
             display = draw_grid(display, grid_size=200)
-        self._show_image(display, self._result_label)
+        self._result_label.set_image(display)
+        # 恢复已有标注
+        pipes = [PipeData.from_dict(p.to_dict() if hasattr(p, 'to_dict') else p)
+                 for p in self._annotation_pipes]
+        labels = [LabelData.from_dict(l.to_dict() if hasattr(l, 'to_dict') else l)
+                  for l in self._annotation_labels]
+        self._result_label.load_data(pipes, labels)
+
+    def _on_pipe_type_changed(self, text: str) -> None:
+        self._result_label.set_pipe_preset(text)
+
+    def _on_annotation_changed(self) -> None:
+        pipes = self._result_label.get_pipes()
+        labels = self._result_label.get_labels()
+        self._annotation_pipes = [p.to_dict() for p in pipes]
+        self._annotation_labels = [l.to_dict() for l in labels]
+
+    def _clear_annotations(self) -> None:
+        self._result_label.clear_all()
+        self._annotation_pipes = []
+        self._annotation_labels = []
 
     def _update_ui_state(self) -> None:
         recording = self.recorder.is_recording
