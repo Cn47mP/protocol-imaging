@@ -43,14 +43,9 @@
 4. **导出层**：输出 PNG，并可选叠加标注
 
 ### 3.2 推荐实现路径
-先做 **半自动 MVP**：
-- 用户手动控制游戏视角移动
-- 工具负责连续截屏
-- 工具提供手动锚点校正
-- 自动生成初版拼图
-- 用户少量修正后导出
+原始路线先做 **半自动 MVP**，即用户手动控制游戏视角移动，工具负责连续截屏、锚点校正、拼图和导出。
 
-这样最稳，风险最低，也最容易先跑通。
+截至 2026-05-29，路线已推进到 **自动采集原型**：工具可以自动检测游戏窗口，通过 Win32 输入模拟执行缩放和拖拽，并按蛇形网格采集截图。半自动流程仍保留为拼接失败或窗口控制不稳定时的兜底方案。
 
 ---
 
@@ -159,6 +154,8 @@
 - 4 点手动校正
 - 拼成一张总图
 - 导出 PNG
+
+当前已超出原始 MVP：已加入自动窗口检测、自动网格采集、模糊检测、羽化融合、项目保存/加载和基础标注。
 
 ### 6.2 MVP 暂不做
 - OCR 自动识别
@@ -342,7 +339,7 @@ endfield-topdown-exporter/
 
 ## 15. 进度同步
 
-当前项目状态（截至 2026-05-25）：
+当前项目状态（截至 2026-05-29）：
 
 ### 15.1 开发顺序完成情况
 
@@ -358,6 +355,11 @@ endfield-topdown-exporter/
 | 8 | 项目保存 | ✅ `model.py` + `storage.py` |
 | 9 | 自动匹配 | ✅ `align.py` ORB 特征匹配 |
 | 10 | 标注层 | ✅ `annotate.py` 网格/标签/框 |
+| 11 | 自动窗口检测 | ✅ `WindowCapture.auto_detect_game_window()` |
+| 12 | 自动采集 | ✅ `AutoCapturer` + `GameController` + GUI 后台线程 |
+| 13 | 模糊检测 | ✅ `preprocess.is_blurry()` |
+| 14 | 羽化融合 | ✅ `stitch.blend_images()` |
+| 15 | OpenStitching 备选 | ✅ `stitch_with_openstitching()` |
 
 ### 15.2 里程碑完成情况
 
@@ -367,27 +369,41 @@ endfield-topdown-exporter/
 | M2 手动拼接 MVP | 4 点锚定、平面变换、PNG 导出 | ✅ 代码完成，未实测 |
 | M3 半自动拼接 | 特征匹配、重叠检测、自动拟合 | ✅ 代码完成，未实测 |
 | M4 标注与项目保存 | 标注层、JSON 项目、重新打开编辑 | ✅ 代码完成，未实测 |
+| M5 自动采集原型 | 自动检测窗口、Win32 控制、蛇形网格采集 | ✅ 代码完成，待真实游戏校准 |
+| M6 体验优化 | 模糊检测、羽化融合、OpenStitching 备选 | ✅ 代码完成，待真实截图调参 |
 
-### 15.3 代码验证
+### 15.3 P0/P1/P2 路线同步
+
+| 路线 | 状态 | 说明 |
+|------|------|------|
+| P0 自动采集 | ✅ 已合入 | 窗口检测、Win32 输入模拟、蛇形网格、GUI 集成 |
+| P1 体验优化 | ✅ 已合入 | 模糊检测、羽化融合、前台检测、OpenStitching 备选 |
+| P2 校准与稳定性 | ⏳ 下一阶段 | 真实 AIC 覆盖格数、移动步长、重叠率、异常恢复 |
+
+### 15.4 代码验证
 
 - 全部 17 个 `.py` 文件语法检查 ✅
 - 全部模块导入验证 ✅
 - `QApplication` + `MainWindow` 创建成功（标题"协议映射"，1200×800）✅
 - 依赖均已在 Hermes venv 中安装（opencv / mss / PySide6 / numpy / Pillow）✅
+- 已生成并发布 Windows 单文件 exe（v0.1.0，约 67MB）✅
 
-### 15.4 待完成
+### 15.5 待完成
 
 - [ ] 运行真实截图实测
 - [ ] 验证拼接质量（游戏画面特征点匹配效果）
+- [ ] 校准真实 AIC 单帧覆盖格数、移动步长和默认网格
+- [ ] 将网格行列数、移动距离、重叠率做成可保存配置
+- [ ] 完善窗口遮挡/游戏未前台/拖拽失败/拼接失败时的恢复提示
 - [ ] 完善手动锚点标定交互界面
-- [ ] 暗管标注 UI（手绘管线）
+- [ ] 完善暗管标注 UI（手绘管线、编辑、删除、吸附）
 - [ ] 单元测试
 - [ ] 截图输出目录默认配置
 
-### 15.5 项目文件
+### 15.6 项目文件
 
 ```
-C:\Users\abc12\protocol-imaging/
+C:\Users\Cn47mP\Documents\GitHub\protocol-imaging/
 ├─ README.md          (新)
 ├─ .gitignore         (新)
 ├─ requirements.txt
@@ -397,7 +413,8 @@ C:\Users\abc12\protocol-imaging/
 └─ app/
    ├─ main.py
    ├─ ui/main_window.py
-   ├─ capture/window_capture.py + recorder.py
+   ├─ capture/window_capture.py + recorder.py + auto_capturer.py
+   ├─ control/game_controller.py
    ├─ image/preprocess.py + align.py + stitch.py + annotate.py
    ├─ project/model.py + storage.py
    └─ export/png_export.py
