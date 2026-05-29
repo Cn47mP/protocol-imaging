@@ -1,7 +1,11 @@
 """
 协议映射 · 游戏控制器
-通过 Win32 SendInput API 控制终末地游戏视角（鼠标拖拽 + 滚轮缩放 + WASD）
-参考 MaaFramework Win32 Input 方案，使用 SendInput 而非 pyautogui
+通过 Win32 SendInput API 控制终末地游戏视角
+参考 MaaFramework SeizeInput.cpp 的 SendInput 实现
+
+终末地基地模式视角控制：
+- WASD = 平移视角
+- 滚轮 = 缩放
 """
 
 import ctypes
@@ -14,6 +18,7 @@ if WIN32:
     try:
         import win32gui
         import win32con
+        import win32api
     except ImportError:
         WIN32 = False
 
@@ -25,10 +30,6 @@ if WIN32:
     INPUT_KEYBOARD = 1
 
     MOUSEEVENTF_MOVE = 0x0001
-    MOUSEEVENTF_LEFTDOWN = 0x0002
-    MOUSEEVENTF_LEFTUP = 0x0004
-    MOUSEEVENTF_RIGHTDOWN = 0x0008
-    MOUSEEVENTF_RIGHTUP = 0x0010
     MOUSEEVENTF_WHEEL = 0x0800
     MOUSEEVENTF_ABSOLUTE = 0x8000
 
@@ -64,16 +65,25 @@ class GameController:
     """通过 Win32 API 控制终末地游戏视角和操作"""
 
     WINDOW_TITLES = [
+        "Endfield",
         "终末地",
         "Arknights Endfield",
         "明日方舟：终末地",
         "明日方舟终末地",
     ]
+    WINDOW_CLASSES = [
+        "UnityWndClass",
+    ]
 
     DEFAULT_ZOOM_STEPS: int = 10
-    DEFAULT_PAN_DISTANCE: int = 400
-    DEFAULT_PAN_DURATION: float = 0.3
-    STABILIZE_DELAY: float = 0.3
+    DEFAULT_PAN_DURATION: float = 0.35
+    STABILIZE_DELAY: float = 0.4
+
+    # WASD 虚拟键码
+    VK_W = 0x57
+    VK_A = 0x41
+    VK_S = 0x53
+    VK_D = 0x44
 
     def __init__(self):
         self.hwnd: int | None = None
@@ -81,25 +91,45 @@ class GameController:
     # ---- 窗口操作 ----
 
     def find_window(self) -> bool:
-        """查找游戏窗口，优先匹配窗口标题"""
+        """查找游戏窗口。"""
         if not WIN32:
             return False
         self.hwnd = None
-        for title in self.WINDOW_TITLES:
-            hwnd = win32gui.FindWindow(None, title)
-            if hwnd and win32gui.IsWindowVisible(hwnd):
-                self.hwnd = hwnd
+
+        def callback(hwnd, _):
+            if self.hwnd is not None:
                 return True
-        return False
+            try:
+                if not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+                    return True
+                title = win32gui.GetWindowText(hwnd).lower()
+                class_name = win32gui.GetClassName(hwnd).lower()
+            except Exception:
+                return True
+
+            title_match = any(k.lower() in title for k in self.WINDOW_TITLES)
+            class_match = any(k.lower() in class_name for k in self.WINDOW_CLASSES)
+            if title_match or class_match:
+                self.hwnd = hwnd
+            return True
+
+        try:
+            win32gui.EnumWindows(callback, None)
+        except Exception:
+            return self.hwnd is not None
+        return self.hwnd is not None
 
     def focus_window(self) -> bool:
         """激活游戏窗口到前台"""
         if not WIN32 or self.hwnd is None:
             return False
-        if win32gui.IsIconic(self.hwnd):
-            win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
-        win32gui.SetForegroundWindow(self.hwnd)
-        time.sleep(0.3)
+        try:
+            if win32gui.IsIconic(self.hwnd):
+                win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(self.hwnd)
+            time.sleep(0.5)
+        except Exception:
+            return False
         return True
 
     def is_active(self) -> bool:
@@ -107,58 +137,55 @@ class GameController:
             return False
         return win32gui.GetForegroundWindow() == self.hwnd
 
-    def get_client_center(self) -> tuple[int, int]:
-        """获取游戏窗口客户区中心坐标（屏幕坐标）"""
+    def ensure_game_foreground(self) -> bool:
+        if not self.is_active():
+            return self.focus_window()
+        return True
+
+    def _move_cursor_to_center(self):
+        """将鼠标移到游戏窗口客户区中心（屏幕坐标）"""
         if not WIN32 or self.hwnd is None:
-            return (0, 0)
-        left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
-        lt = win32gui.ClientToScreen(self.hwnd, (left, top))
-        cx = lt[0] + (right - left) // 2
-        cy = lt[1] + (bottom - top) // 2
-        return (cx, cy)
+            return
+        try:
+            left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
+            lt = win32gui.ClientToScreen(self.hwnd, (left, top))
+            cx = lt[0] + (right - left) // 2
+            cy = lt[1] + (bottom - top) // 2
+            if cx > 0 and cy > 0:
+                user32.SetCursorPos(cx, cy)
+                time.sleep(0.05)
+        except Exception:
+            pass
+
+    # ---- 键盘操作 (MaaFramework SeizeInput 方式) ----
+    # 同时填 wVk + wScan，dwFlags=0 (key_down) / KEYEVENTF_KEYUP (key_up)
+    # 不加 KEYEVENTF_SCANCODE
+
+    def _send_key_down(self, vk: int):
+        scan = user32.MapVirtualKeyW(vk, 0)  # MAPVK_VK_TO_VSC = 0
+        inp = INPUT()
+        inp.type = INPUT_KEYBOARD
+        inp.union.ki.wVk = vk
+        inp.union.ki.wScan = scan
+        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+
+    def _send_key_up(self, vk: int):
+        scan = user32.MapVirtualKeyW(vk, 0)
+        inp = INPUT()
+        inp.type = INPUT_KEYBOARD
+        inp.union.ki.wVk = vk
+        inp.union.ki.wScan = scan
+        inp.union.ki.dwFlags = 0x0002  # KEYEVENTF_KEYUP
+        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
 
     # ---- 鼠标操作 (SendInput) ----
 
-    def _send_mouse_move(self, dx: int, dy: int):
-        """相对移动鼠标"""
-        inp = INPUT()
-        inp.type = INPUT_MOUSE
-        inp.union.mi.dx = dx
-        inp.union.mi.dy = dy
-        inp.union.mi.dwFlags = MOUSEEVENTF_MOVE
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
-    def _send_mouse_left_down(self):
-        inp = INPUT()
-        inp.type = INPUT_MOUSE
-        inp.union.mi.dwFlags = MOUSEEVENTF_LEFTDOWN
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
-    def _send_mouse_left_up(self):
-        inp = INPUT()
-        inp.type = INPUT_MOUSE
-        inp.union.mi.dwFlags = MOUSEEVENTF_LEFTUP
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
     def _send_mouse_wheel(self, delta: int):
-        """delta > 0 向上滚（拉远）, delta < 0 向下滚（拉近）"""
+        """delta < 0 向上滚（拉远）, delta > 0 向下滚（拉近）"""
         inp = INPUT()
         inp.type = INPUT_MOUSE
         inp.union.mi.mouseData = delta * WHEEL_DELTA
         inp.union.mi.dwFlags = MOUSEEVENTF_WHEEL
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
-    def _send_key_down(self, vk: int):
-        inp = INPUT()
-        inp.type = INPUT_KEYBOARD
-        inp.union.ki.wVk = vk
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-
-    def _send_key_up(self, vk: int):
-        inp = INPUT()
-        inp.type = INPUT_KEYBOARD
-        inp.union.ki.wVk = vk
-        inp.union.ki.dwFlags = 0x0002  # KEYEVENTF_KEYUP
         user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
 
     # ---- 视角控制 ----
@@ -167,67 +194,48 @@ class GameController:
         """滚轮拉远（俯视）"""
         if not WIN32:
             return
+        self.ensure_game_foreground()
+        self._move_cursor_to_center()
         steps = steps or self.DEFAULT_ZOOM_STEPS
         for _ in range(steps):
             self._send_mouse_wheel(-1)
-            time.sleep(0.05)
+            time.sleep(0.08)
 
     def zoom_in(self, steps: int | None = None):
         """滚轮拉近"""
         if not WIN32:
             return
+        self.ensure_game_foreground()
+        self._move_cursor_to_center()
         steps = steps or self.DEFAULT_ZOOM_STEPS
         for _ in range(steps):
             self._send_mouse_wheel(1)
-            time.sleep(0.05)
+            time.sleep(0.08)
 
-    def pan_view(self, dx: int, dy: int, duration: float | None = None):
+    def pan_view(self, vk: int, duration: float | None = None):
         """
-        鼠标拖拽移动视角
-        dx > 0 向右, dy > 0 向下
-        终末地：拖拽鼠标反向移动视角（拖右→画面左移→看到右边内容）
+        WASD 平移视角
+        vk = VK_A / VK_D / VK_W / VK_S
         """
         if not WIN32:
             return
+        self.ensure_game_foreground()
+        self._move_cursor_to_center()
+
         duration = duration if duration is not None else self.DEFAULT_PAN_DURATION
-        steps = max(1, int(duration * 60))  # 60fps 平滑移动
-        step_dx = dx // steps
-        step_dy = dy // steps
-
-        self._send_mouse_left_down()
-        for _ in range(steps):
-            self._send_mouse_move(step_dx, step_dy)
-            time.sleep(duration / steps)
-        self._send_mouse_left_up()
-        time.sleep(self.STABILIZE_DELAY)
-
-    def pan_right(self, distance: int | None = None):
-        d = distance or self.DEFAULT_PAN_DISTANCE
-        self.pan_view(d, 0)
-
-    def pan_left(self, distance: int | None = None):
-        d = distance or self.DEFAULT_PAN_DISTANCE
-        self.pan_view(-d, 0)
-
-    def pan_down(self, distance: int | None = None):
-        d = distance or self.DEFAULT_PAN_DISTANCE
-        self.pan_view(0, d)
-
-    def pan_up(self, distance: int | None = None):
-        d = distance or self.DEFAULT_PAN_DISTANCE
-        self.pan_view(0, -d)
-
-    # ---- WASD 移动（备选方案，部分玩家可能用键盘移动视角）----
-
-    def pan_with_key(self, key: str, duration: float = 0.15):
-        """用 WASD 短暂移动视角"""
-        if not WIN32:
-            return
-        vk_map = {"W": 0x57, "A": 0x41, "S": 0x53, "D": 0x44}
-        vk = vk_map.get(key.upper())
-        if vk is None:
-            return
         self._send_key_down(vk)
         time.sleep(duration)
         self._send_key_up(vk)
         time.sleep(self.STABILIZE_DELAY)
+
+    def pan_right(self, duration: float | None = None):
+        self.pan_view(self.VK_D, duration)
+
+    def pan_left(self, duration: float | None = None):
+        self.pan_view(self.VK_A, duration)
+
+    def pan_down(self, duration: float | None = None):
+        self.pan_view(self.VK_S, duration)
+
+    def pan_up(self, duration: float | None = None):
+        self.pan_view(self.VK_W, duration)

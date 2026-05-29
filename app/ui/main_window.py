@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import logging
+import traceback
 from pathlib import Path
 
 import cv2
@@ -67,6 +69,8 @@ class AutoCaptureWorker(QThread):
             frames = self._capturer.capture_grid(self._grid)
             self.finished.emit(frames)
         except Exception as exc:
+            logging.exception("Auto capture worker failed")
+            traceback.print_exc()
             self.error.emit(str(exc))
 
 
@@ -197,7 +201,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(capture_group)
 
-        auto_group = QGroupBox("自动采集（鼠标控制）")
+        auto_group = QGroupBox("自动采集（键盘控制）")
         auto_layout = QFormLayout(auto_group)
 
         preset_row = QHBoxLayout()

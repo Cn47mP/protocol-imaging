@@ -4,6 +4,8 @@
 """
 
 import time
+import logging
+import winsound
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -79,8 +81,15 @@ class AutoCapturer:
         self._cancelled = True
 
     def _log(self, msg: str):
+        logging.info("auto_capture: %s", msg)
         if self._log_callback:
             self._log_callback(msg)
+
+    def _beep_captured(self):
+        winsound.Beep(1000, 60)
+
+    def _beep_blurry(self):
+        winsound.Beep(400, 80)
 
     def _notify_progress(self, done: int, total: int):
         if self._progress_callback:
@@ -127,6 +136,7 @@ class AutoCapturer:
                         if is_blur:
                             self._blur_skipped += 1
                             self._log(f"  模糊跳过 (值:{blur_val:.1f})")
+                            self._beep_blurry()
                         else:
                             self._frames.append(CapturedFrame(
                                 image=frame_img,
@@ -134,6 +144,7 @@ class AutoCapturer:
                                 seq=seq, timestamp=time.time(),
                             ))
                             seq += 1
+                            self._beep_captured()
                     else:
                         self._frames.append(CapturedFrame(
                             image=frame_img,
@@ -141,6 +152,7 @@ class AutoCapturer:
                             seq=seq, timestamp=time.time(),
                         ))
                         seq += 1
+                        self._beep_captured()
 
                 self._notify_progress(row * grid.cols + _col_in_row + 1, total)
 
@@ -149,14 +161,14 @@ class AutoCapturer:
                     direction = "right" if row % 2 == 0 else "left"
                     self._log(f"  移动 → {direction}")
                     if direction == "right":
-                        self.controller.pan_right(grid.pan_distance)
+                        self.controller.pan_right()
                     else:
-                        self.controller.pan_left(grid.pan_distance)
+                        self.controller.pan_left()
 
             # 纵向移动（每行结束后）
             if row < grid.rows - 1:
                 self._log("  移动 ↓ ")
-                self.controller.pan_down(grid.pan_distance)
+                self.controller.pan_down()
 
         self._log(f"采集完成：{len(self._frames)} 帧")
         if self._blur_skipped > 0:

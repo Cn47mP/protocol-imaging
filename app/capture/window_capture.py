@@ -16,6 +16,8 @@ if sys.platform == "win32":
     try:
         import win32gui
         import win32con
+        import win32process
+        import win32api
         WIN32_AVAILABLE = True
     except ImportError:
         WIN32_AVAILABLE = False
@@ -26,10 +28,18 @@ class WindowCapture:
 
     # 终末地游戏窗口标题关键词
     ENDFIELD_WINDOW_TITLES = [
+        "Endfield",
         "终末地",
         "Arknights Endfield",
         "明日方舟：终末地",
         "明日方舟终末地"
+    ]
+    ENDFIELD_PROCESS_NAMES = [
+        "Endfield",
+        "Endfield.exe",
+    ]
+    ENDFIELD_CLASS_NAMES = [
+        "UnityWndClass",
     ]
 
     def __init__(self):
@@ -63,21 +73,52 @@ class WindowCapture:
         if not WIN32_AVAILABLE:
             return False
 
+        def matches_game_window(hwnd: int) -> bool:
+            try:
+                title = win32gui.GetWindowText(hwnd)
+                class_name = win32gui.GetClassName(hwnd)
+                title_lower = title.lower()
+                class_lower = class_name.lower()
+            except Exception:
+                return False
+
+            if any(keyword.lower() in title_lower for keyword in self.ENDFIELD_WINDOW_TITLES):
+                return True
+            if any(keyword.lower() in class_lower for keyword in self.ENDFIELD_CLASS_NAMES):
+                return True
+
+            try:
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                # QueryFullProcessImageName is available through win32process on Windows.
+                handle = win32api.OpenProcess(win32con.PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                try:
+                    process_path = win32process.QueryFullProcessImageName(handle, 0)
+                finally:
+                    win32api.CloseHandle(handle)
+                process_name = process_path.rsplit("\\", 1)[-1].lower()
+                return any(name.lower() == process_name for name in self.ENDFIELD_PROCESS_NAMES)
+            except Exception:
+                return False
+
         def callback(hwnd, _):
             if self._hwnd is not None:
-                return True  # 已经找到，跳过
-            title = win32gui.GetWindowText(hwnd)
-            class_name = win32gui.GetClassName(hwnd)
-            for keyword in self.ENDFIELD_WINDOW_TITLES:
-                if keyword.lower() in title.lower() or keyword.lower() in class_name.lower():
-                    # 检查窗口是否可见且未最小化
-                    if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
-                        self._hwnd = hwnd
-                        return True
-            return False
+                return True
+            if matches_game_window(hwnd):
+                # 检查窗口是否可见且未最小化
+                try:
+                    is_usable = win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd)
+                except Exception:
+                    is_usable = False
+                if is_usable:
+                    self._hwnd = hwnd
+            return True
 
         self._hwnd = None
-        win32gui.EnumWindows(callback, None)
+        try:
+            win32gui.EnumWindows(callback, None)
+        except Exception:
+            if self._hwnd is None:
+                return False
 
         if self._hwnd is not None:
             # 获取客户区（不含标题栏）的屏幕坐标
@@ -115,7 +156,7 @@ class WindowCapture:
                         "title": title,
                         "class": win32gui.GetClassName(hwnd)
                     })
-            return False
+            return True
 
         win32gui.EnumWindows(callback, None)
         return windows

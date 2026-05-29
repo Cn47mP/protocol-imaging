@@ -4,17 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import traceback
 from pathlib import Path
-
-# Windows 高 DPI 感知：必须在 QApplication 创建前声明，否则截图和坐标都是逻辑像素
-if sys.platform == "win32":
-    import ctypes
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI Aware V2
-    except Exception:
-        pass
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -22,9 +15,23 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from app.ui.main_window import MainWindow
 
 
+LOG_PATH = Path("logs/protocol-imaging.log")
+
+
+def _setup_logging() -> None:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        filename=LOG_PATH,
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        encoding="utf-8",
+    )
+
+
 def _exception_hook(exc_type, exc_value, exc_tb):
     """全局未捕获异常 — 弹窗提示 + 日志记录."""
     tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logging.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
     print(f"[协议映射 · 异常] {tb_str}", file=sys.stderr)
 
     msg = QMessageBox()
@@ -37,6 +44,9 @@ def _exception_hook(exc_type, exc_value, exc_tb):
 
 
 def main(argv: list[str] | None = None) -> None:
+    _setup_logging()
+    logging.info("Starting protocol-imaging")
+
     if argv is None:
         argv = sys.argv[1:]
 
