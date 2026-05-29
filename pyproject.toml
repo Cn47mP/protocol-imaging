@@ -17,7 +17,6 @@ dependencies = [
   "mss>=9.0.0",
   "numpy>=1.24.0",
   "Pillow>=10.0.0",
-  "PySide6>=6.5.0",
   "pywin32>=306; sys_platform == 'win32'",
   "stitching>=0.4.0",
 ]
@@ -29,9 +28,6 @@ dev = [
 
 [project.scripts]
 protocol-imaging = "app.main:main"
-
-[project.gui-scripts]
-protocol-imaging-gui = "app.main:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
