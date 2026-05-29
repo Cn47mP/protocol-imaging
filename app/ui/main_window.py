@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QImage, QPixmap
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -434,15 +434,43 @@ class MainWindow(QMainWindow):
     # --- 采集 ---
 
     def _populate_monitors(self) -> None:
+        """使用 QScreen 获取准确的物理像素分辨率（mss 在高 DPI 下不准）。"""
         try:
             self._monitor_combo.clear()
-            for index, monitor in enumerate(self.capture.list_monitors()):
-                label = "全部显示器" if index == 0 else f"显示器 {index}"
+            self._monitor_regions: list[dict] = []
+
+            app = QGuiApplication.instance()
+            if app is None:
+                self._log("Qt 应用未初始化，无法获取显示器信息")
+                return
+
+            screens = app.screens()
+
+            # 全部显示器（虚拟桌面）
+            all_geo = app.primaryScreen().virtualGeometry()
+            all_region = {
+                "left": all_geo.x(), "top": all_geo.y(),
+                "width": all_geo.width(), "height": all_geo.height(),
+            }
+            self._monitor_regions.append(all_region)
+            self._monitor_combo.addItem(
+                f"全部显示器（{all_geo.width()}×{all_geo.height()}）",
+                0,
+            )
+
+            # 逐个屏幕
+            for i, screen in enumerate(screens, start=1):
+                geo = screen.geometry()
+                region = {
+                    "left": geo.x(), "top": geo.y(),
+                    "width": geo.width(), "height": geo.height(),
+                }
+                self._monitor_regions.append(region)
                 self._monitor_combo.addItem(
-                    f"{label}（{monitor['width']}×{monitor['height']}）",
-                    index,
+                    f"显示器 {i}（{geo.width()}×{geo.height()}）",
+                    i,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._log(f"获取显示器失败：{exc}")
 
     def _toggle_preview(self) -> None:
@@ -664,12 +692,16 @@ class MainWindow(QMainWindow):
 
     def _apply_monitor_selection(self) -> bool:
         index = self._monitor_combo.currentData()
-        if index is None:
+        if index is None or index >= len(self._monitor_regions):
             QMessageBox.warning(self, "提示", "请选择捕获源。")
             return False
         try:
-            self.capture.set_monitor(index)
-        except Exception as exc:  # noqa: BLE001
+            region = self._monitor_regions[index]
+            self.capture.set_custom_region(
+                region["left"], region["top"],
+                region["width"], region["height"],
+            )
+        except Exception as exc:
             QMessageBox.warning(self, "捕获源错误", str(exc))
             return False
         return True
