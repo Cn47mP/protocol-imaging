@@ -434,7 +434,7 @@ class MainWindow(QMainWindow):
     # --- 采集 ---
 
     def _populate_monitors(self) -> None:
-        """使用 QScreen 获取准确的物理像素分辨率（mss 在高 DPI 下不准）。"""
+        """使用 QScreen 获取物理像素分辨率，考虑 DPI 缩放。"""
         try:
             self._monitor_combo.clear()
             self._monitor_regions: list[dict] = []
@@ -446,28 +446,35 @@ class MainWindow(QMainWindow):
 
             screens = app.screens()
 
-            # 全部显示器（虚拟桌面）
+            # 全部显示器（虚拟桌面）— 使用主屏 DPR 换算物理像素
+            primary_dpr = app.primaryScreen().devicePixelRatio()
             all_geo = app.primaryScreen().virtualGeometry()
+            phys_w = int(all_geo.width() * primary_dpr)
+            phys_h = int(all_geo.height() * primary_dpr)
+            phys_x = int(all_geo.x() * primary_dpr)
+            phys_y = int(all_geo.y() * primary_dpr)
             all_region = {
-                "left": all_geo.x(), "top": all_geo.y(),
-                "width": all_geo.width(), "height": all_geo.height(),
+                "left": phys_x, "top": phys_y,
+                "width": phys_w, "height": phys_h,
             }
             self._monitor_regions.append(all_region)
             self._monitor_combo.addItem(
-                f"全部显示器（{all_geo.width()}×{all_geo.height()}）",
+                f"全部显示器（{phys_w}×{phys_h}）",
                 0,
             )
 
             # 逐个屏幕
             for i, screen in enumerate(screens, start=1):
                 geo = screen.geometry()
-                region = {
-                    "left": geo.x(), "top": geo.y(),
-                    "width": geo.width(), "height": geo.height(),
-                }
+                dpr = screen.devicePixelRatio()
+                pw = int(geo.width() * dpr)
+                ph = int(geo.height() * dpr)
+                px = int(geo.x() * dpr)
+                py = int(geo.y() * dpr)
+                region = {"left": px, "top": py, "width": pw, "height": ph}
                 self._monitor_regions.append(region)
                 self._monitor_combo.addItem(
-                    f"显示器 {i}（{geo.width()}×{geo.height()}）",
+                    f"显示器 {i}（{pw}×{ph}，{int(dpr*100)}%）",
                     i,
                 )
         except Exception as exc:

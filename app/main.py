@@ -8,6 +8,14 @@ import sys
 import traceback
 from pathlib import Path
 
+# Windows 高 DPI 感知：必须在 QApplication 创建前声明，否则截图和坐标都是逻辑像素
+if sys.platform == "win32":
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI Aware V2
+    except Exception:
+        pass
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 

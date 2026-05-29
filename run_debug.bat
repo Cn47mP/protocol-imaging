@@ -1,19 +1,4 @@
 @echo off
-cd /d "%~dp0"
-
-set PYTHON=
-if exist ".venv\Scripts\python.exe" (
-    set PYTHON=.venv\Scripts\python.exe
-) else (
-    where python >nul 2>&1 && set PYTHON=python
-)
-
-if "%PYTHON%"=="" (
-    echo [ERROR] Python not found.
-    pause
-    exit /b 1
-)
-
-title Ð­ÒéÓ³Éä [DEBUG]
-"%PYTHON%" -m app --debug
+title Ð­ï¿½ï¿½Ó³ï¿½ï¿½ [DEBUG]
+python -m app --debug
 pause

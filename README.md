@@ -13,18 +13,57 @@
 - 尚未接入完整可用的真实游戏窗口工作流
 - 暂不提供演示素材和完整 Demo
 
-## 使用
+## 环境要求
+
+- **Python 3.10+**（需已加入系统 PATH）
+- Windows 10/11
+
+## 安装与启动
+
+### 1. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+主要依赖：
+
+| 包 | 最低版本 | 用途 |
+|---|---|---|
+| PySide6 | ≥6.5.0 | GUI 框架 |
+| opencv-python | ≥4.8.0 | 图像处理与特征匹配 |
+| numpy | ≥1.24.0 | 数组计算 |
+| Pillow | ≥10.0.0 | 图像读写 |
+| mss | ≥9.0.0 | 屏幕截图 |
+
+### 2. 启动
+
+**方式一：双击启动**
+
+- `run.bat` — 正常启动（自动检测 Python、自动安装依赖）
+- `run_debug.bat` — 调试模式（带日志输出，窗口不自动关闭）
+
+**方式二：命令行启动**
+
+```bash
+python -m app
+```
+
+### 3. 打包为 exe（可选）
+
+```bash
+pip install pyinstaller
+build.bat
+```
+
+生成的 `dist/protocol-imaging.exe` 为单文件可执行程序，无需 Python 环境即可运行。
+
+### 4. 开发模式安装（可选）
 
 ```bash
 pip install -e .
 protocol-imaging
 ```
-
-也可以直接运行：
-
-```bash
-pip install -r requirements.txt
-python -m app
 ```
 
 或双击 `run.bat`（自动检测 Python / 安装依赖）。
