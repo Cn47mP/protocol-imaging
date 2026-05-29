@@ -37,8 +37,8 @@ from app.capture.window_capture import WindowCapture
 from app.export.png_export import export_png
 from app.image.align import auto_align, manual_align
 from app.image.annotate import draw_grid
-from app.image.preprocess import crop_ui, normalize_brightness
-from app.image.stitch import stitch_sequential
+from app.image.preprocess import crop_ui, normalize_brightness, is_blurry
+from app.image.stitch import stitch_sequential, STITCHING_AVAILABLE
 from app.ui.widgets.annotation_overlay import AnnotationOverlay, PipeData, LabelData, PIPE_PRESETS
 from app.project.model import FrameInfo, Project
 from app.project.storage import ProjectStorage
@@ -69,6 +69,11 @@ class MainWindow(QMainWindow):
         self._grid_enabled: bool = False
         self._annotation_pipes: list = []
         self._annotation_labels: list = []
+        # 新功能参数
+        self._skip_blurry_frames: bool = True  # 是否跳过模糊帧
+        self._blur_threshold: float = 100.0  # 模糊判断阈值
+        self._use_blend: bool = True  # 是否使用羽化融合
+        self._skipped_frames_count: int = 0  # 跳过的模糊帧数量
 
         self._capture_timer = QTimer(self)
         self._capture_timer.timeout.connect(self._on_capture_tick)
@@ -137,6 +142,10 @@ class MainWindow(QMainWindow):
         self._monitor_combo = QComboBox()
         capture_layout.addRow("捕获源", self._monitor_combo)
 
+        self._btn_auto_detect = QPushButton("自动检测游戏窗口")
+        self._btn_auto_detect.clicked.connect(self._auto_detect_game_window)
+        capture_layout.addRow(self._btn_auto_detect)
+
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(1, 300)
         self._interval_spin.setValue(5)
@@ -195,6 +204,23 @@ class MainWindow(QMainWindow):
         self._normalize_check = QCheckBox("亮度归一化")
         self._normalize_check.toggled.connect(self._on_normalize_toggled)
         preprocess_layout.addRow(self._normalize_check)
+
+        self._skip_blurry_check = QCheckBox("跳过模糊帧")
+        self._skip_blurry_check.setChecked(True)
+        self._skip_blurry_check.toggled.connect(self._on_skip_blurry_toggled)
+        preprocess_layout.addRow(self._skip_blurry_check)
+
+        self._blur_threshold_spin = QSpinBox()
+        self._blur_threshold_spin.setRange(10, 500)
+        self._blur_threshold_spin.setValue(100)
+        self._blur_threshold_spin.setSuffix(" (值越低越严格)")
+        self._blur_threshold_spin.valueChanged.connect(self._on_blur_threshold_changed)
+        preprocess_layout.addRow("模糊阈值", self._blur_threshold_spin)
+
+        self._use_blend_check = QCheckBox("羽化融合拼接")
+        self._use_blend_check.setChecked(True)
+        self._use_blend_check.toggled.connect(self._on_use_blend_toggled)
+        preprocess_layout.addRow(self._use_blend_check)
 
         layout.addWidget(preprocess_group)
 
@@ -496,6 +522,8 @@ class MainWindow(QMainWindow):
         self._update_ui_state()
 
     def _start_capture(self) -> None:
+        """开始采集，重置跳过计数"""
+        self._skipped_frames_count = 0
         if not self._apply_monitor_selection():
             return
         if self._preview_active:
@@ -511,7 +539,10 @@ class MainWindow(QMainWindow):
     def _stop_capture(self) -> None:
         self._capture_timer.stop()
         self.recorder.stop()
-        self._log(f"采集停止，共 {len(self._frames)} 帧。")
+        msg = f"采集停止，共 {len(self._frames)} 帧"
+        if self._skipped_frames_count > 0:
+            msg += f" (已跳过 {self._skipped_frames_count} 个模糊帧)"
+        self._log(msg + "。")
         self._update_ui_state()
 
     def _on_preview_tick(self) -> None:
@@ -523,12 +554,23 @@ class MainWindow(QMainWindow):
             self._show_image(frame, self._preview_label)
 
     def _on_capture_tick(self) -> None:
+        """采集一帧，增加模糊检测"""
         try:
             frame = self.recorder.capture_frame()
         except Exception:
             return
         if frame is None:
             return
+
+        # 模糊检测
+        if self._skip_blurry_frames:
+            is_blur, blur_val = is_blurry(frame, self._blur_threshold)
+            if is_blur:
+                self._skipped_frames_count += 1
+                self._log(f"跳过模糊帧 (值: {blur_val:.1f}, 已跳过: {self._skipped_frames_count})")
+                return
+
+        # 正常处理
         frame = self._preprocess_frame(frame)
         self._frames.append(frame)
         self._homographies.append(np.eye(3, dtype=np.float64))  # 默认单位矩阵
@@ -560,10 +602,30 @@ class MainWindow(QMainWindow):
     def _on_normalize_toggled(self, checked: bool) -> None:
         self._normalize_enabled = checked
 
+    def _on_skip_blurry_toggled(self, checked: bool) -> None:
+        self._skip_blurry_frames = checked
+
+    def _on_blur_threshold_changed(self, value: int) -> None:
+        self._blur_threshold = float(value)
+
+    def _on_use_blend_toggled(self, checked: bool) -> None:
+        self._use_blend = checked
+
     def _on_grid_toggled(self, checked: bool) -> None:
         self._grid_enabled = checked
         if self._stitched_image is not None:
             self._show_stitched_result()
+
+    def _auto_detect_game_window(self) -> None:
+        """自动检测游戏窗口"""
+        success = self.capture.auto_detect_game_window()
+        if success:
+            info = self.capture.get_region_info()
+            self._log(f"已检测到游戏窗口: {info.get('window_title', '未知')}")
+            if self._preview_active:
+                self._toggle_preview()
+        else:
+            self._log("未找到游戏窗口，请确保游戏正在运行")
 
     def _preprocess_frame(self, frame):
         result = frame
@@ -658,7 +720,11 @@ class MainWindow(QMainWindow):
                 self._refresh_frame_list_status()
 
             try:
-                self._stitched_image = stitch_sequential(self._frames, self._homographies)
+                self._stitched_image = stitch_sequential(
+                    self._frames, 
+                    self._homographies,
+                    use_blend=self._use_blend
+                )
             except Exception as exc:
                 QMessageBox.warning(self, "拼接失败", f"{exc}")
                 self._log(f"拼接失败：{exc}")

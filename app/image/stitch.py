@@ -7,6 +7,43 @@
 import cv2
 import numpy as np
 
+# 尝试导入 OpenStitching 库
+try:
+    import stitching
+    STITCHING_AVAILABLE = True
+except ImportError:
+    STITCHING_AVAILABLE = False
+
+
+def blend_images(base: np.ndarray, new_img: np.ndarray, mask: np.ndarray,
+                blur_kernel_size: int = 15) -> np.ndarray:
+    """
+    羽化融合重叠区域
+    参数:
+        base: 基础图像
+        new_img: 新图像
+        mask: 新图像的有效区域掩码
+        blur_kernel_size: 模糊核大小
+    """
+    # 确保 mask 是单通道
+    if len(mask.shape) == 3:
+        mask = mask[:, :, 0]
+    
+    # 高斯模糊掩码
+    mask_blurred = cv2.GaussianBlur(mask.astype(np.float32), 
+                                    (blur_kernel_size, blur_kernel_size), 0)
+    mask_blurred = mask_blurred / 255.0
+    
+    # 扩展为 3 通道
+    if len(base.shape) == 3:
+        mask_3ch = np.stack([mask_blurred] * 3, axis=2)
+    else:
+        mask_3ch = mask_blurred
+    
+    # 羽化融合
+    blended = base.astype(np.float32) * (1 - mask_3ch) + new_img.astype(np.float32) * mask_3ch
+    return blended.astype(np.uint8)
+
 
 def warp_and_merge(img: np.ndarray, H: np.ndarray,
                    canvas_size: tuple[int, int]) -> np.ndarray:
@@ -41,8 +78,15 @@ def compute_canvas_size(images: list[np.ndarray],
 
 
 def stitch_sequential(images: list[np.ndarray],
-                      homographies: list[np.ndarray]) -> np.ndarray:
-    """逐帧拼接：将图像按顺序拼接到第一张图的坐标系"""
+                      homographies: list[np.ndarray],
+                      use_blend: bool = True) -> np.ndarray:
+    """
+    逐帧拼接：将图像按顺序拼接到第一张图的坐标系
+    参数:
+        images: 图像列表
+        homographies: 单应性矩阵列表
+        use_blend: 是否使用羽化融合
+    """
     if len(images) != len(homographies):
         raise ValueError("图像数量和单应性矩阵数量不匹配")
     if len(images) == 0:
@@ -62,11 +106,29 @@ def stitch_sequential(images: list[np.ndarray],
         if result is None:
             result = warped
         else:
-            # 简单叠加（重叠区域后面那张覆盖前面）
-            mask = np.all(warped > 0, axis=2)
-            result[mask] = warped[mask]
+            if use_blend:
+                # 羽化融合
+                mask = np.any(warped > 0, axis=2).astype(np.uint8) * 255
+                result = blend_images(result, warped, mask)
+            else:
+                # 简单叠加（重叠区域后面那张覆盖前面）
+                mask = np.all(warped > 0, axis=2)
+                result[mask] = warped[mask]
 
     return result
+
+
+def stitch_with_openstitching(images: list[np.ndarray]) -> np.ndarray:
+    """
+    使用 OpenStitching 库进行自动拼接
+    要求: 图像有足够的重叠区域
+    """
+    if not STITCHING_AVAILABLE:
+        raise ImportError("需要安装 stitching 库: pip install stitching")
+    
+    stitcher = stitching.Stitcher()
+    panorama = stitcher.stitch(images)
+    return panorama
 
 
 def compute_offset_homography(
