@@ -1,0 +1,26 @@
+{
+    "ProtocolImagingStart": {
+        "desc": "开始采集协议映射全景图",
+        "pre_delay": 1000,
+        "action": "Custom",
+        "custom_action": "ProtocolImagingCapture",
+        "custom_action_param": {
+            "capture": {
+                "preset": "medium",
+                "skip_blur": true,
+                "blur_threshold": 100.0,
+                "use_fusion": true,
+                "use_openstitching": false
+            }
+        },
+        "post_delay": 500,
+        "next": [
+            "ProtocolImagingEnd"
+        ]
+    },
+    "ProtocolImagingEnd": {
+        "desc": "协议映射全景图采集完成",
+        "pre_delay": 0,
+        "post_delay": 0
+    }
+}
