@@ -8,7 +8,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -34,14 +34,40 @@ from PySide6.QtWidgets import (
 
 from app.capture.recorder import Recorder
 from app.capture.window_capture import WindowCapture
+from app.capture.auto_capturer import AutoCapturer, CaptureGrid, CAPTURE_PRESETS
+from app.control.game_controller import GameController
 from app.export.png_export import export_png
 from app.image.align import auto_align, manual_align
 from app.image.annotate import draw_grid
-from app.image.preprocess import crop_ui, normalize_brightness
-from app.image.stitch import stitch_sequential
+from app.image.preprocess import crop_ui, normalize_brightness, is_blurry
+from app.image.stitch import stitch_sequential, STITCHING_AVAILABLE
 from app.ui.widgets.annotation_overlay import AnnotationOverlay, PipeData, LabelData, PIPE_PRESETS
 from app.project.model import FrameInfo, Project
 from app.project.storage import ProjectStorage
+
+
+class AutoCaptureWorker(QThread):
+    """后台线程执行自动化网格采集"""
+    progress = Signal(int, int)
+    log = Signal(str)
+    finished = Signal(list)  # list[CapturedFrame]
+    error = Signal(str)
+
+    def __init__(self, auto_capturer: AutoCapturer, grid: CaptureGrid):
+        super().__init__()
+        self._capturer = auto_capturer
+        self._grid = grid
+
+    def run(self):
+        self._capturer.set_progress_callback(
+            lambda done, total: self.progress.emit(done, total)
+        )
+        self._capturer.set_log_callback(lambda msg: self.log.emit(msg))
+        try:
+            frames = self._capturer.capture_grid(self._grid)
+            self.finished.emit(frames)
+        except Exception as exc:
+            self.error.emit(str(exc))
 
 
 class MainWindow(QMainWindow):
@@ -54,12 +80,17 @@ class MainWindow(QMainWindow):
 
         self.capture = WindowCapture()
         self.recorder = Recorder(self.capture)
+        self.controller = GameController()
+        self.auto_capturer = AutoCapturer(self.controller, self.capture)
 
         self._frames: list[np.ndarray] = []
-        self._homographies: list[np.ndarray] = []  # 每帧的单应性矩阵
+        self._homographies: list[np.ndarray] = []
         self._stitched_image: np.ndarray | None = None
         self._project_path: Path | None = None
         self._preview_active = False
+        self._auto_active = False
+        self._auto_grid: CaptureGrid = CAPTURE_PRESETS["medium"]
+        self._auto_worker: AutoCaptureWorker | None = None
         # 预处理参数
         self._crop_top: int = 0
         self._crop_bottom: int = 0
@@ -69,6 +100,11 @@ class MainWindow(QMainWindow):
         self._grid_enabled: bool = False
         self._annotation_pipes: list = []
         self._annotation_labels: list = []
+        # 新功能参数
+        self._skip_blurry_frames: bool = True  # 是否跳过模糊帧
+        self._blur_threshold: float = 100.0  # 模糊判断阈值
+        self._use_blend: bool = True  # 是否使用羽化融合
+        self._skipped_frames_count: int = 0  # 跳过的模糊帧数量
 
         self._capture_timer = QTimer(self)
         self._capture_timer.timeout.connect(self._on_capture_tick)
@@ -137,6 +173,10 @@ class MainWindow(QMainWindow):
         self._monitor_combo = QComboBox()
         capture_layout.addRow("捕获源", self._monitor_combo)
 
+        self._btn_auto_detect = QPushButton("自动检测游戏窗口")
+        self._btn_auto_detect.clicked.connect(self._auto_detect_game_window)
+        capture_layout.addRow(self._btn_auto_detect)
+
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(1, 300)
         self._interval_spin.setValue(5)
@@ -156,6 +196,32 @@ class MainWindow(QMainWindow):
         capture_layout.addRow(self._btn_stop)
 
         layout.addWidget(capture_group)
+
+        auto_group = QGroupBox("自动采集（鼠标控制）")
+        auto_layout = QFormLayout(auto_group)
+
+        preset_row = QHBoxLayout()
+        self._auto_preset_combo = QComboBox()
+        self._auto_preset_combo.addItems(["小型基地 (2×2)", "中型基地 (3×3)", "大型基地 (4×4)", "超大基地 (5×5)"])
+        self._auto_preset_combo.currentIndexChanged.connect(self._on_auto_preset_changed)
+        preset_row.addWidget(self._auto_preset_combo)
+        auto_layout.addRow("预设", preset_row)
+
+        btn_row = QHBoxLayout()
+        self._btn_auto_start = QPushButton("一键自动采集")
+        self._btn_auto_start.clicked.connect(self._start_auto_capture)
+        btn_row.addWidget(self._btn_auto_start)
+
+        self._btn_auto_cancel = QPushButton("取消")
+        self._btn_auto_cancel.clicked.connect(self._cancel_auto_capture)
+        self._btn_auto_cancel.setEnabled(False)
+        btn_row.addWidget(self._btn_auto_cancel)
+        auto_layout.addRow(btn_row)
+
+        self._auto_progress_label = QLabel("")
+        auto_layout.addRow(self._auto_progress_label)
+
+        layout.addWidget(auto_group)
 
         preprocess_group = QGroupBox("预处理")
         preprocess_layout = QFormLayout(preprocess_group)
@@ -195,6 +261,23 @@ class MainWindow(QMainWindow):
         self._normalize_check = QCheckBox("亮度归一化")
         self._normalize_check.toggled.connect(self._on_normalize_toggled)
         preprocess_layout.addRow(self._normalize_check)
+
+        self._skip_blurry_check = QCheckBox("跳过模糊帧")
+        self._skip_blurry_check.setChecked(True)
+        self._skip_blurry_check.toggled.connect(self._on_skip_blurry_toggled)
+        preprocess_layout.addRow(self._skip_blurry_check)
+
+        self._blur_threshold_spin = QSpinBox()
+        self._blur_threshold_spin.setRange(10, 500)
+        self._blur_threshold_spin.setValue(100)
+        self._blur_threshold_spin.setSuffix(" (值越低越严格)")
+        self._blur_threshold_spin.valueChanged.connect(self._on_blur_threshold_changed)
+        preprocess_layout.addRow("模糊阈值", self._blur_threshold_spin)
+
+        self._use_blend_check = QCheckBox("羽化融合拼接")
+        self._use_blend_check.setChecked(True)
+        self._use_blend_check.toggled.connect(self._on_use_blend_toggled)
+        preprocess_layout.addRow(self._use_blend_check)
 
         layout.addWidget(preprocess_group)
 
@@ -496,6 +579,8 @@ class MainWindow(QMainWindow):
         self._update_ui_state()
 
     def _start_capture(self) -> None:
+        """开始采集，重置跳过计数"""
+        self._skipped_frames_count = 0
         if not self._apply_monitor_selection():
             return
         if self._preview_active:
@@ -511,7 +596,10 @@ class MainWindow(QMainWindow):
     def _stop_capture(self) -> None:
         self._capture_timer.stop()
         self.recorder.stop()
-        self._log(f"采集停止，共 {len(self._frames)} 帧。")
+        msg = f"采集停止，共 {len(self._frames)} 帧"
+        if self._skipped_frames_count > 0:
+            msg += f" (已跳过 {self._skipped_frames_count} 个模糊帧)"
+        self._log(msg + "。")
         self._update_ui_state()
 
     def _on_preview_tick(self) -> None:
@@ -523,12 +611,23 @@ class MainWindow(QMainWindow):
             self._show_image(frame, self._preview_label)
 
     def _on_capture_tick(self) -> None:
+        """采集一帧，增加模糊检测"""
         try:
             frame = self.recorder.capture_frame()
         except Exception:
             return
         if frame is None:
             return
+
+        # 模糊检测
+        if self._skip_blurry_frames:
+            is_blur, blur_val = is_blurry(frame, self._blur_threshold)
+            if is_blur:
+                self._skipped_frames_count += 1
+                self._log(f"跳过模糊帧 (值: {blur_val:.1f}, 已跳过: {self._skipped_frames_count})")
+                return
+
+        # 正常处理
         frame = self._preprocess_frame(frame)
         self._frames.append(frame)
         self._homographies.append(np.eye(3, dtype=np.float64))  # 默认单位矩阵
@@ -560,10 +659,108 @@ class MainWindow(QMainWindow):
     def _on_normalize_toggled(self, checked: bool) -> None:
         self._normalize_enabled = checked
 
+    def _on_skip_blurry_toggled(self, checked: bool) -> None:
+        self._skip_blurry_frames = checked
+
+    def _on_blur_threshold_changed(self, value: int) -> None:
+        self._blur_threshold = float(value)
+
+    def _on_use_blend_toggled(self, checked: bool) -> None:
+        self._use_blend = checked
+
     def _on_grid_toggled(self, checked: bool) -> None:
         self._grid_enabled = checked
         if self._stitched_image is not None:
             self._show_stitched_result()
+
+    def _auto_detect_game_window(self) -> None:
+        """自动检测游戏窗口"""
+        success = self.capture.auto_detect_game_window()
+        if success:
+            info = self.capture.get_region_info()
+            self._log(f"已检测到游戏窗口: {info.get('window_title', '未知')}")
+            if self._preview_active:
+                self._toggle_preview()
+        else:
+            self._log("未找到游戏窗口，请确保游戏正在运行")
+
+    def _on_auto_preset_changed(self, index: int) -> None:
+        keys = ["small", "medium", "large", "xlarge"]
+        if 0 <= index < len(keys):
+            self._auto_grid = CAPTURE_PRESETS[keys[index]]
+
+    def _start_auto_capture(self) -> None:
+        """启动自动网格采集（后台线程）"""
+        # 先尝试自动检测游戏窗口
+        if not self.capture.auto_detect_game_window():
+            self._log("尝试游戏窗口检测...")
+            if not self._apply_monitor_selection():
+                return
+
+        self._frames = []
+        self._homographies = []
+        self._stitched_image = None
+        self._skipped_frames_count = 0
+        self._frame_list.clear()
+        self._frame_label.setText("准备中...")
+
+        self._auto_active = True
+        self._btn_auto_start.setEnabled(False)
+        self._btn_auto_cancel.setEnabled(True)
+        self._update_ui_state()
+
+        self._auto_worker = AutoCaptureWorker(self.auto_capturer, self._auto_grid)
+        self._auto_worker.progress.connect(self._on_auto_progress)
+        self._auto_worker.log.connect(self._log)
+        self._auto_worker.finished.connect(self._on_auto_finished)
+        self._auto_worker.error.connect(self._on_auto_error)
+        self._auto_worker.start()
+        self._log(f"自动采集已启动：{self._auto_grid.rows}×{self._auto_grid.cols} 网格")
+
+    def _cancel_auto_capture(self) -> None:
+        self.auto_capturer.cancel()
+        self._log("正在取消自动采集...")
+
+    def _on_auto_progress(self, done: int, total: int) -> None:
+        self._auto_progress_label.setText(f"进度：{done}/{total}")
+        self.statusBar().showMessage(f"自动采集中... {done}/{total}")
+
+    def _on_auto_finished(self, frames: list) -> None:
+        self._auto_active = False
+        self._auto_worker = None
+        self._btn_auto_start.setEnabled(True)
+        self._btn_auto_cancel.setEnabled(False)
+        self._auto_progress_label.setText("")
+        self._update_ui_state()
+
+        if not frames:
+            self._log("采集被取消或未采集到任何帧")
+            return
+
+        self._frames = [f.image for f in frames]
+        self._homographies = [np.eye(3, dtype=np.float64) for _ in frames]
+
+        self._frame_list.clear()
+        for i, f in enumerate(frames):
+            self._frame_list.addItem(f"帧 {i:04d} ({f.row},{f.col})")
+        self._frame_label.setText(f"已采集：{len(self._frames)} 帧")
+
+        if self._frames:
+            self._show_image(self._frames[0], self._preview_label)
+            self._tabs.setCurrentIndex(0)
+
+        self._log(f"自动采集完成：{len(self._frames)} 帧")
+        self._log("请点击「生成全景图」进行拼接")
+
+    def _on_auto_error(self, msg: str) -> None:
+        self._auto_active = False
+        self._auto_worker = None
+        self._btn_auto_start.setEnabled(True)
+        self._btn_auto_cancel.setEnabled(False)
+        self._auto_progress_label.setText("")
+        self._update_ui_state()
+        self._log(f"自动采集错误：{msg}")
+        QMessageBox.warning(self, "采集失败", msg)
 
     def _preprocess_frame(self, frame):
         result = frame
@@ -658,7 +855,11 @@ class MainWindow(QMainWindow):
                 self._refresh_frame_list_status()
 
             try:
-                self._stitched_image = stitch_sequential(self._frames, self._homographies)
+                self._stitched_image = stitch_sequential(
+                    self._frames, 
+                    self._homographies,
+                    use_blend=self._use_blend
+                )
             except Exception as exc:
                 QMessageBox.warning(self, "拼接失败", f"{exc}")
                 self._log(f"拼接失败：{exc}")
@@ -766,18 +967,26 @@ class MainWindow(QMainWindow):
         recording = self.recorder.is_recording
         has_frames = bool(self._frames)
         has_result = self._stitched_image is not None
-        has_project = self._project_path is not None
+        busy = recording or self._auto_active
 
-        self._btn_preview.setEnabled(not recording)
-        self._btn_start.setEnabled(not recording and self._monitor_combo.count() > 0)
+        self._btn_preview.setEnabled(not busy)
+        self._btn_start.setEnabled(not busy and self._monitor_combo.count() > 0)
         self._btn_stop.setEnabled(recording)
-        self._btn_clear.setEnabled(has_frames and not recording)
-        self._btn_align.setEnabled(has_frames and not recording)
-        self._btn_stitch.setEnabled(has_frames and not recording)
-        self._btn_export.setEnabled((has_frames or has_result) and not recording)
-        self._act_save.setEnabled(has_frames and not recording)
-        self._act_save_as.setEnabled(has_frames and not recording)
-        self._status_label.setText("采集中" if recording else "就绪")
+        self._btn_auto_start.setEnabled(not busy)
+        self._btn_auto_cancel.setEnabled(self._auto_active)
+        self._btn_clear.setEnabled(has_frames and not busy)
+        self._btn_align.setEnabled(has_frames and not busy)
+        self._btn_stitch.setEnabled(has_frames and not busy)
+        self._btn_export.setEnabled((has_frames or has_result) and not busy)
+        self._act_save.setEnabled(has_frames and not busy)
+        self._act_save_as.setEnabled(has_frames and not busy)
+
+        if self._auto_active:
+            self._status_label.setText("自动采集中...")
+        elif recording:
+            self._status_label.setText("采集中")
+        else:
+            self._status_label.setText("就绪")
 
     def _log(self, message: str) -> None:
         self.statusBar().showMessage(message)
@@ -786,6 +995,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self._capture_timer.stop()
         self._preview_timer.stop()
+        if self._auto_worker and self._auto_worker.isRunning():
+            self.auto_capturer.cancel()
+            self._auto_worker.wait(3000)
         self.capture.release()
         super().closeEvent(event)
 
