@@ -23,16 +23,11 @@ protocol-imaging
 也可以直接运行：
 
 ```bash
-pip install -e .
-protocol-imaging
-```
-
-也可以直接运行：
-
-```bash
 pip install -r requirements.txt
-python -m app.main
+python -m app
 ```
+
+或双击 `run.bat`（自动检测 Python / 安装依赖）。
 
 预期流程：
 
