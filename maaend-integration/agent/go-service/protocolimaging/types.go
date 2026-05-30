@@ -26,12 +26,11 @@ func DefaultCaptureGridParams() CaptureGridParams {
 
 // StitchParams 拼接参数
 type StitchParams struct {
-	FramesDir       string `json:"frames_dir"`       // 截图目录
-	OutputPath      string `json:"output_path"`      // 输出路径
-	UseFusion       bool   `json:"use_fusion"`       // 羽化融合
-	SkipBlur        bool   `json:"skip_blur"`        // 跳过模糊帧
-	BlurThreshold   float64 `json:"blur_threshold"`  // 模糊阈值
-	UseOpenStitching bool  `json:"use_openstitching"` // 使用 OpenStitching
+	FramesDir     string  `json:"frames_dir"`     // 截图目录
+	OutputPath    string  `json:"output_path"`    // 输出路径
+	UseFusion     bool    `json:"use_fusion"`     // 羽化融合
+	SkipBlur      bool    `json:"skip_blur"`      // 跳过模糊帧
+	BlurThreshold float64 `json:"blur_threshold"` // 模糊阈值
 }
 
 // DefaultStitchParams 默认拼接参数

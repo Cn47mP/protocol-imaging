@@ -195,9 +195,6 @@ func (a *StitchAction) Run(ctx *maa.Context, arg *maa.CustomActionArg) bool {
 	if params.SkipBlur {
 		args = append(args, "--skip-blur", fmt.Sprintf("%.1f", params.BlurThreshold))
 	}
-	if params.UseOpenStitching {
-		args = append(args, "--use-openstitching")
-	}
 
 	cmd := exec.Command(pythonBin, args...)
 	cmd.Dir = toolPath

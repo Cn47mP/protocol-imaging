@@ -9,11 +9,11 @@
 
 ## 当前实现
 
-- 窗口检测：EnumWindows 按标题/类名/进程名匹配终末地
-- 视角控制：参考 MaaFramework SeizeInput 的 WASD + 滚轮方案
-- 网格采集：蛇形扫描，预设 small(2×2) / medium(3×3) / large(4×4) / xlarge(5×5)
+- 采集方式：通过 MaaEnd Pipeline + Go Service 调度
+- 视角控制：CharacterControllerPitchDeltaAction 拉远视角
+- 网格采集：Go Service 蛇形网格移动 + MaaFramework 截图
 - 模糊检测：Laplacian 方差，低于阈值自动跳过
-- 全景拼接：ORB 特征匹配 + 手动锚点兜底 + 高斯羽化融合
+- 全景拼接：ORB 特征匹配 + 高斯羽化融合（Python CLI）
 - 导出：PNG
 
 ## 待校准参数（需要真实 AIC 实测）

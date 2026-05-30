@@ -8,7 +8,6 @@ from app.image.stitch import (
     blend_images,
     compute_offset_homography,
     stitch_sequential,
-    stitch_with_openstitching,
 )
 
 
@@ -97,21 +96,3 @@ def test_stitch_sequential_mismatched_lengths():
 def test_stitch_sequential_empty():
     result = stitch_sequential([], [])
     assert result.shape == (1, 1, 3)
-
-
-@pytest.mark.skipif(
-    not pytest.importorskip("stitching", reason="stitching 库未安装"),
-    reason="stitching 库未安装"
-)
-def test_stitch_with_openstitching_basic():
-    # 生成两张有大量重叠的图片
-    img = np.random.randint(0, 255, (200, 300, 3), dtype=np.uint8)
-    # 第二张是第一张的局部（模拟重叠）
-    crop = img[:, 50:250]
-    padded = np.zeros_like(img)
-    padded[:, 50:250] = crop
-    try:
-        result = stitch_with_openstitching([img, padded])
-        assert result is not None
-    except Exception:
-        pytest.skip("OpenStitching 对合成图片拼接失败，需真实截图")

@@ -8,7 +8,7 @@
     1. 读取目录中的截图（按文件名排序）
     2. 可选模糊检测跳过
     3. 计算 homographies（ORB 特征匹配）
-    4. 拼接（羽化融合 / OpenStitching）
+    4. 拼接（羽化融合）
     5. 导出 PNG
 """
 
@@ -24,7 +24,7 @@ import numpy as np
 
 from app.image.align import auto_align
 from app.image.preprocess import is_blurry
-from app.image.stitch import stitch_sequential, stitch_with_openstitching
+from app.image.stitch import stitch_sequential
 from app.export.png_export import export_png
 
 LOG_PATH = Path("logs/protocol-imaging.log")
@@ -77,7 +77,6 @@ def run_stitch(
     use_fusion: bool = True,
     skip_blur: bool = True,
     blur_threshold: float = 100.0,
-    use_openstitching: bool = False,
 ) -> bool:
     """纯图像处理流程：加载 → 过滤 → 对齐 → 拼接 → 导出"""
     frames_path = Path(frames_dir)
@@ -101,18 +100,15 @@ def run_stitch(
 
     print("[协议映射] 开始拼接...")
 
-    if use_openstitching:
-        stitched = stitch_with_openstitching(frames)
-    else:
-        # 计算 homographies（每帧相对第一帧）
-        homographies = [np.eye(3, dtype=np.float64)]
-        for i in range(1, len(frames)):
-            H = auto_align(frames[i], frames[0])
-            if H is None:
-                print(f"[协议映射 · 警告] 第 {i} 帧对齐失败，使用单位矩阵", file=sys.stderr)
-                H = np.eye(3, dtype=np.float64)
-            homographies.append(H)
-        stitched = stitch_sequential(frames, homographies, use_blend=use_fusion)
+    # 计算 homographies（每帧相对第一帧）
+    homographies = [np.eye(3, dtype=np.float64)]
+    for i in range(1, len(frames)):
+        H = auto_align(frames[i], frames[0])
+        if H is None:
+            print(f"[协议映射 · 警告] 第 {i} 帧对齐失败，使用单位矩阵", file=sys.stderr)
+            H = np.eye(3, dtype=np.float64)
+        homographies.append(H)
+    stitched = stitch_sequential(frames, homographies, use_blend=use_fusion)
 
     if stitched is None:
         print("[协议映射 · 错误] 拼接失败", file=sys.stderr)
@@ -157,11 +153,6 @@ def main(argv: list[str] | None = None) -> None:
         help="跳过模糊帧（可选阈值，默认 100）",
     )
     parser.add_argument(
-        "--use-openstitching",
-        action="store_true",
-        help="使用 OpenStitching 备选拼接",
-    )
-    parser.add_argument(
         "--debug", "-d",
         action="store_true",
         help="启用调试输出",
@@ -179,6 +170,5 @@ def main(argv: list[str] | None = None) -> None:
         use_fusion=args.use_fusion,
         skip_blur=skip_blur,
         blur_threshold=blur_threshold,
-        use_openstitching=args.use_openstitching,
     )
     sys.exit(0 if success else 1)

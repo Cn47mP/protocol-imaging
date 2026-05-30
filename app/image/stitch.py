@@ -7,13 +7,6 @@
 import cv2
 import numpy as np
 
-# 尝试导入 OpenStitching 库
-try:
-    import stitching
-    STITCHING_AVAILABLE = True
-except ImportError:
-    STITCHING_AVAILABLE = False
-
 
 def blend_images(base: np.ndarray, new_img: np.ndarray, mask: np.ndarray,
                 blur_kernel_size: int = 15) -> np.ndarray:
@@ -91,19 +84,6 @@ def stitch_sequential(images: list[np.ndarray],
                 result[mask] = warped[mask]
 
     return result
-
-
-def stitch_with_openstitching(images: list[np.ndarray]) -> np.ndarray:
-    """
-    使用 OpenStitching 库进行自动拼接
-    要求: 图像有足够的重叠区域
-    """
-    if not STITCHING_AVAILABLE:
-        raise ImportError("需要安装 stitching 库: pip install stitching")
-    
-    stitcher = stitching.Stitcher()
-    panorama = stitcher.stitch(images)
-    return panorama
 
 
 def compute_offset_homography(

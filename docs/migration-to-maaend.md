@@ -41,7 +41,6 @@
 | 手动锚点校正 | `app/image/align.py` → `manual_align()` | 需适配 web GUI 的锚点 UI |
 | 逐帧拼接 | `app/image/stitch.py` → `stitch_sequential()` | 直接迁移 |
 | 羽化融合 | `app/image/stitch.py` → `blend_images()` | 直接迁移 |
-| OpenStitching 备选 | `app/image/stitch.py` → `stitch_with_openstitching()` | 直接迁移 |
 | 网格/标签标注 | `app/image/annotate.py` | 迁移，需 web 端标注 UI |
 | PNG 导出 | `app/export/png_export.py` | 直接迁移 |
 
@@ -185,3 +184,4 @@ agent/go-service/panoramiccapture/
 - 不继续维护 PySide6 桌面版（被 MaaEnd web 前端替代）
 - 不继续维护 pyinstaller exe 分发（被 MaaEnd 内嵌替代）
 - 不继续在 protocol-imaging 仓库开发采集/控制功能（由 MaaEnd 替代）
+- 不保留独立使用模式（已移除 capture、control、main.py 等模块）

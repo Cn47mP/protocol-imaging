@@ -105,10 +105,3 @@ python tools/build_and_install.py
 | `pitch_delta` | 60 | 拉远视角角度，需实测 |
 | `pan_duration` | 350ms | 每步移动时长，需实测 |
 | 移动步长 | 由 CharacterController 决定 | `ForwardAxisAction` 的 axis × 100ms |
-
-## 独立使用（不依赖 MaaEnd）
-
-```bash
-pip install -r requirements.txt
-python -m app.main --preset medium --use-fusion --output base_panorama.png
-```
