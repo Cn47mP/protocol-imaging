@@ -1,0 +1,12 @@
+{
+    "task.ProtocolImaging.label": "📷Base Panorama Capture",
+    "task.ProtocolImaging.description": "Automatically capture a top-down view of the base and stitch it into a panorama. Must be in the base scene.",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.label": "Grid Size",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.description": "Grid dimensions for capture. Larger grids cover more area but take longer.",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Small.label": "Small (2×2)",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Medium.label": "Medium (3×3)",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Large.label": "Large (4×4)",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.XLarge.label": "XLarge (5×5)",
+    "task.ProtocolImaging.option.ProtocolImagingUseFusion.label": "Feathered Blending",
+    "task.ProtocolImaging.option.ProtocolImagingUseFusion.description": "Use Gaussian feathered blending for stitching to reduce visible seams"
+}

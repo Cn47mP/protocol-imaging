@@ -25,9 +25,5 @@ screenshots/
 # User project files
 *.protocol-mapping
 
-# Sample generated files
-samples/input/*
-!samples/input/.gitkeep
-!samples/output/
-samples/output/*
-!samples/output/.gitkeep
+# Logs
+logs/

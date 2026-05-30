@@ -1,147 +1,262 @@
 package protocolimaging
 
 import (
-    "context"
-    "fmt"
-    "os"
-    "os/exec"
-    "path/filepath"
-    "runtime"
-    "strings"
-    "time"
+	"encoding/json"
+	"fmt"
+	"image"
+	"image/png"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"time"
 
-    maa "github.com/MaaXYZ/maa-framework-go/v4"
-    "github.com/MaaXYZ/MaaEnd/agent/go-service/pkg/pienv"
-    "github.com/bytedance/sonic"
-    "github.com/rs/zerolog/log"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
+	"github.com/rs/zerolog/log"
 )
 
-const (
-    protocolImagingCaptureActionName = "ProtocolImagingCapture"
-    protocolImagingStitchActionName  = "ProtocolImagingStitch"
-)
+const component = "protocolimaging"
 
-// ProtocolImagingCaptureAction 执行自动采集动作
-type ProtocolImagingCaptureAction struct{}
+// ── CaptureGrid Action ──
 
-func (a *ProtocolImagingCaptureAction) Run(ctx context.Context, param []byte) (bool, []byte) {
-    log.Info().
-        Str("action", protocolImagingCaptureActionName).
-        Str("param", string(param)).
-        Msg("Executing protocol imaging capture")
+// CaptureGridAction 蛇形网格采集：在每个网格点截图并保存到目录
+type CaptureGridAction struct{}
 
-    var params ActionParams
-    if err := sonic.Unmarshal(param, &params); err != nil {
-        params = ActionParams{
-            Capture: DefaultCaptureParams(),
-        }
-    }
+var _ maa.CustomActionRunner = &CaptureGridAction{}
 
-    // 查找 Python 可执行文件
-    pythonBin, err := findPython()
-    if err != nil {
-        log.Error().Err(err).Msg("Failed to find Python executable")
-        return false, []byte(err.Error())
-    }
+func (a *CaptureGridAction) Run(ctx *maa.Context, arg *maa.CustomActionArg) bool {
+	params := DefaultCaptureGridParams()
+	if arg != nil && arg.CustomActionParam != "" {
+		if err := json.Unmarshal([]byte(arg.CustomActionParam), &params); err != nil {
+			log.Error().Err(err).Str("component", component).Msg("CaptureGrid: failed to parse params")
+			return false
+		}
+	}
 
-    // 查找工具目录
-    toolPath, err := findProtocolImagingToolPath()
-    if err != nil {
-        log.Error().Err(err).Msg("Failed to find protocol imaging tool path")
-        return false, []byte(err.Error())
-    }
+	// 创建输出目录
+	if err := os.MkdirAll(params.OutputDir, 0755); err != nil {
+		log.Error().Err(err).Str("component", component).Msg("CaptureGrid: failed to create output dir")
+		return false
+	}
 
-    // 准备运行命令
-    args := []string{"-m", "app.main", "--mode", "auto", "--preset", string(params.Capture.Preset)}
-    if params.Capture.SkipBlur {
-        args = append(args, "--skip-blur", fmt.Sprintf("%.2f", params.Capture.BlurThreshold))
-    }
-    if params.Capture.UseFusion {
-        args = append(args, "--use-fusion")
-    }
-    if params.Capture.UseOpenStitching {
-        args = append(args, "--use-openstitching")
-    }
-    if params.OutputPath != "" {
-        args = append(args, "--output", params.OutputPath)
-    }
+	ctrl := ctx.GetTasker().GetController()
+	if ctrl == nil {
+		log.Error().Str("component", component).Msg("CaptureGrid: nil controller")
+		return false
+	}
 
-    cmd := exec.CommandContext(ctx, pythonBin, args...)
-    cmd.Dir = toolPath
-    cmd.Stdout = os.Stdout
-    cmd.Stderr = os.Stderr
+	totalFrames := params.Rows * params.Cols
+	captured := 0
 
-    log.Info().
-        Str("python", pythonBin).
-        Str("tool_dir", toolPath).
-        Str("cmd", strings.Join(args, " ")).
-        Msg("Starting protocol imaging tool")
+	log.Info().
+		Str("component", component).
+		Int("rows", params.Rows).
+		Int("cols", params.Cols).
+		Int("total", totalFrames).
+		Msg("CaptureGrid: starting grid capture")
 
-    start := time.Now()
-    if err := cmd.Start(); err != nil {
-        log.Error().Err(err).Msg("Failed to start protocol imaging tool")
-        return false, []byte(err.Error())
-    }
+	for row := 0; row < params.Rows; row++ {
+		// 蛇形：偶数行从左到右，奇数行从右到左
+		cols := make([]int, params.Cols)
+		for i := range cols {
+			if row%2 == 0 {
+				cols[i] = i
+			} else {
+				cols[i] = params.Cols - 1 - i
+			}
+		}
 
-    if err := cmd.Wait(); err != nil {
-        log.Error().Err(err).Dur("duration", time.Since(start)).Msg("Protocol imaging tool failed")
-        return false, []byte(err.Error())
-    }
+		for _, col := range cols {
+			// 截图
+			ctrl.PostScreencap().Wait()
+			img, err := ctrl.CacheImage()
+			if err != nil || img == nil {
+				log.Error().Err(err).Str("component", component).
+					Int("row", row).Int("col", col).
+					Msg("CaptureGrid: screenshot failed")
+				return false
+			}
 
-    log.Info().
-        Dur("duration", time.Since(start)).
-        Msg("Protocol imaging capture completed successfully")
-    return true, []byte("{}")
+			// 保存截图
+			filename := fmt.Sprintf("frame_%02d_%02d.png", row, col)
+			outPath := filepath.Join(params.OutputDir, filename)
+			if err := saveImage(img, outPath); err != nil {
+				log.Error().Err(err).Str("component", component).
+					Str("path", outPath).
+					Msg("CaptureGrid: save failed")
+				return false
+			}
+
+			captured++
+			log.Info().
+				Str("component", component).
+				Int("row", row).Int("col", col).
+				Int("captured", captured).Int("total", totalFrames).
+				Msg("CaptureGrid: frame captured")
+
+			// 移动到下一个网格点（除了最后一个）
+			if captured < totalFrames {
+				if row%2 == 0 && col < params.Cols-1 || row%2 == 1 && col > 0 {
+					// 水平移动：通过 CharacterControllerYawDeltaAction 旋转视角
+					yawRight(ctx, params.PanDuration)
+				} else if row < params.Rows-1 {
+					// 垂直移动：通过 CharacterControllerForwardAxisAction 后退
+					moveBackward(ctx, params.PanDuration)
+				}
+				// 等待稳定
+				time.Sleep(400 * time.Millisecond)
+			}
+		}
+	}
+
+	log.Info().
+		Str("component", component).
+		Int("captured", captured).
+		Str("output_dir", params.OutputDir).
+		Msg("CaptureGrid: completed")
+
+	return true
 }
 
-// ProtocolImagingStitchAction 执行拼接动作（如果单独需要）
-type ProtocolImagingStitchAction struct{}
+// yawRight 通过 CharacterControllerYawDeltaAction 向右旋转视角
+func yawRight(ctx *maa.Context, duration int) {
+	// delta 单位是度，内部乘以 2 得到像素偏移
+	// 正值向右旋转
+	override := map[string]any{
+		"CharacterControllerYawDeltaAction": map[string]any{
+			"delta": 30,
+		},
+	}
+	ctx.RunAction("CharacterControllerYawDeltaAction",
+		maa.Rect{0, 0, 0, 0}, "", override)
+}
 
-func (a *ProtocolImagingStitchAction) Run(ctx context.Context, param []byte) (bool, []byte) {
-    log.Info().
-        Str("action", protocolImagingStitchActionName).
-        Str("param", string(param)).
-        Msg("Executing protocol imaging stitch")
+// moveBackward 通过 CharacterControllerForwardAxisAction 向后移动
+func moveBackward(ctx *maa.Context, duration int) {
+	// axis * 100ms = 移动时长，负值向后
+	override := map[string]any{
+		"CharacterControllerForwardAxisAction": map[string]any{
+			"axis": -3,
+		},
+	}
+	ctx.RunAction("CharacterControllerForwardAxisAction",
+		maa.Rect{0, 0, 0, 0}, "", override)
+}
 
-    // 拼接通常在采集后自动完成，所以这里主要是一个占位符
-    return true, []byte(`{"status": "ok"}`)
+// saveImage 保存 image.Image 到 PNG 文件
+func saveImage(img image.Image, path string) error {
+	if img == nil {
+		return fmt.Errorf("image is nil")
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		return fmt.Errorf("encode png: %w", err)
+	}
+	return nil
+}
+
+// ── Stitch Action ──
+
+// StitchAction 调用 Python CLI 拼接截图
+type StitchAction struct{}
+
+var _ maa.CustomActionRunner = &StitchAction{}
+
+func (a *StitchAction) Run(ctx *maa.Context, arg *maa.CustomActionArg) bool {
+	params := DefaultStitchParams()
+	if arg != nil && arg.CustomActionParam != "" {
+		if err := json.Unmarshal([]byte(arg.CustomActionParam), &params); err != nil {
+			log.Error().Err(err).Str("component", component).Msg("Stitch: failed to parse params")
+			return false
+		}
+	}
+
+	pythonBin, err := findPython()
+	if err != nil {
+		log.Error().Err(err).Str("component", component).Msg("Stitch: python not found")
+		return false
+	}
+
+	toolPath, err := findProtocolImagingToolPath()
+	if err != nil {
+		log.Error().Err(err).Str("component", component).Msg("Stitch: tool path not found")
+		return false
+	}
+
+	// 构建 CLI 参数
+	args := []string{"-m", "app", params.FramesDir, "--output", params.OutputPath}
+	if params.UseFusion {
+		args = append(args, "--use-fusion")
+	}
+	if params.SkipBlur {
+		args = append(args, "--skip-blur", fmt.Sprintf("%.1f", params.BlurThreshold))
+	}
+	if params.UseOpenStitching {
+		args = append(args, "--use-openstitching")
+	}
+
+	cmd := exec.Command(pythonBin, args...)
+	cmd.Dir = toolPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	log.Info().
+		Str("component", component).
+		Str("python", pythonBin).
+		Str("tool_dir", toolPath).
+		Str("cmd", fmt.Sprintf("%v", args)).
+		Msg("Stitch: starting")
+
+	start := time.Now()
+	if err := cmd.Run(); err != nil {
+		log.Error().Err(err).Str("component", component).
+			Dur("duration", time.Since(start)).
+			Msg("Stitch: failed")
+		return false
+	}
+
+	log.Info().
+		Str("component", component).
+		Dur("duration", time.Since(start)).
+		Str("output", params.OutputPath).
+		Msg("Stitch: completed")
+	return true
 }
 
 func findPython() (string, error) {
-    candidates := []string{"python3", "python"}
-    if runtime.GOOS == "windows" {
-        candidates = []string{"pythonw.exe", "python.exe", "py.exe"}
-    }
-    for _, bin := range candidates {
-        if p, err := exec.LookPath(bin); err == nil {
-            return p, nil
-        }
-    }
-    return "", fmt.Errorf("could not find Python executable")
+	candidates := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		candidates = []string{"python.exe", "pythonw.exe", "py.exe"}
+	}
+	for _, bin := range candidates {
+		if p, err := exec.LookPath(bin); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("python executable not found")
 }
 
 func findProtocolImagingToolPath() (string, error) {
-    // 可能的位置
-    candidates := []string{
-        filepath.Join(getCwd(), "tools", "protocolimaging"),
-        filepath.Join(getCwd(), "..", "tools", "protocolimaging"),
-    }
-    if userDir, err := os.UserHomeDir(); err == nil {
-        candidates = append(candidates, filepath.Join(userDir, ".maa", "tools", "protocolimaging"))
-    }
-    // 也可以尝试从 pienv 或者环境变量找
-    if piPath := pienv.ProtocolImagingPath(); piPath != "" {
-        candidates = append(candidates, piPath)
-    }
-    for _, p := range candidates {
-        if _, err := os.Stat(p); err == nil {
-            return p, nil
-        }
-    }
-    return "", fmt.Errorf("could not find protocol imaging tool")
+	candidates := []string{
+		filepath.Join(getCwd(), "tools", "protocolimaging"),
+		filepath.Join(getCwd(), "..", "tools", "protocolimaging"),
+	}
+	if userDir, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, filepath.Join(userDir, ".maa", "tools", "protocolimaging"))
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("protocol imaging tool not found in: %v", candidates)
 }
 
 func getCwd() string {
-    cwd, _ := os.Getwd()
-    return cwd
+	cwd, _ := os.Getwd()
+	return cwd
 }

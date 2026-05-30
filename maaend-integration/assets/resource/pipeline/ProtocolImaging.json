@@ -1,26 +1,55 @@
 {
     "ProtocolImagingStart": {
-        "desc": "开始采集协议映射全景图",
-        "pre_delay": 1000,
+        "desc": "协议映射全景图采集入口",
+        "next": [
+            "ProtocolImagingZoomOut"
+        ]
+    },
+    "ProtocolImagingZoomOut": {
+        "desc": "拉远视角到俯视角度",
         "action": "Custom",
-        "custom_action": "ProtocolImagingCapture",
+        "custom_action": "CharacterControllerPitchDeltaAction",
         "custom_action_param": {
-            "capture": {
-                "preset": "medium",
-                "skip_blur": true,
-                "blur_threshold": 100.0,
-                "use_fusion": true,
-                "use_openstitching": false
-            }
+            "delta": 60
         },
-        "post_delay": 500,
+        "post_delay": 1000,
+        "next": [
+            "ProtocolImagingCaptureGrid"
+        ]
+    },
+    "ProtocolImagingCaptureGrid": {
+        "desc": "蛇形网格采集截图",
+        "action": "Custom",
+        "custom_action": "ProtocolImagingCaptureGrid",
+        "custom_action_param": {
+            "rows": 3,
+            "cols": 3,
+            "pan_duration": 350,
+            "zoom_steps": 10,
+            "output_dir": "pi_frames",
+            "skip_blur": true,
+            "blur_threshold": 100.0
+        },
+        "next": [
+            "ProtocolImagingStitch"
+        ]
+    },
+    "ProtocolImagingStitch": {
+        "desc": "拼接截图生成全景图",
+        "action": "Custom",
+        "custom_action": "ProtocolImagingStitch",
+        "custom_action_param": {
+            "frames_dir": "pi_frames",
+            "output_path": "base_panorama.png",
+            "use_fusion": true,
+            "skip_blur": true,
+            "blur_threshold": 100.0
+        },
         "next": [
             "ProtocolImagingEnd"
         ]
     },
     "ProtocolImagingEnd": {
-        "desc": "协议映射全景图采集完成",
-        "pre_delay": 0,
-        "post_delay": 0
+        "desc": "协议映射全景图采集完成"
     }
 }

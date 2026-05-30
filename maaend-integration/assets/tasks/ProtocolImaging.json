@@ -1,4 +1,106 @@
 {
-    "name": "ProtocolImaging",
-    "entry": "ProtocolImagingStart"
+    "task": [
+        {
+            "name": "ProtocolImaging",
+            "label": "$task.ProtocolImaging.label",
+            "entry": "ProtocolImagingStart",
+            "description": "$task.ProtocolImaging.description",
+            "controller": [
+                "Win32-Front"
+            ],
+            "group": [
+                "other_menu"
+            ],
+            "option": [
+                "ProtocolImagingGridSize",
+                "ProtocolImagingUseFusion"
+            ]
+        }
+    ],
+    "option": {
+        "ProtocolImagingGridSize": {
+            "type": "select",
+            "label": "$task.ProtocolImaging.option.ProtocolImagingGridSize.label",
+            "description": "$task.ProtocolImaging.option.ProtocolImagingGridSize.description",
+            "default_case": "Medium",
+            "cases": [
+                {
+                    "name": "Small",
+                    "label": "$task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Small.label",
+                    "pipeline_override": {
+                        "ProtocolImagingCaptureGrid": {
+                            "custom_action_param": {
+                                "rows": 2,
+                                "cols": 2
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Medium",
+                    "label": "$task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Medium.label",
+                    "pipeline_override": {
+                        "ProtocolImagingCaptureGrid": {
+                            "custom_action_param": {
+                                "rows": 3,
+                                "cols": 3
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Large",
+                    "label": "$task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Large.label",
+                    "pipeline_override": {
+                        "ProtocolImagingCaptureGrid": {
+                            "custom_action_param": {
+                                "rows": 4,
+                                "cols": 4
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "XLarge",
+                    "label": "$task.ProtocolImaging.option.ProtocolImagingGridSize.cases.XLarge.label",
+                    "pipeline_override": {
+                        "ProtocolImagingCaptureGrid": {
+                            "custom_action_param": {
+                                "rows": 5,
+                                "cols": 5
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "ProtocolImagingUseFusion": {
+            "type": "switch",
+            "label": "$task.ProtocolImaging.option.ProtocolImagingUseFusion.label",
+            "description": "$task.ProtocolImaging.option.ProtocolImagingUseFusion.description",
+            "default_case": "Yes",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "ProtocolImagingStitch": {
+                            "custom_action_param": {
+                                "use_fusion": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "ProtocolImagingStitch": {
+                            "custom_action_param": {
+                                "use_fusion": false
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    }
 }

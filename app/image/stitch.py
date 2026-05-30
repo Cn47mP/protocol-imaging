@@ -52,31 +52,6 @@ def warp_and_merge(img: np.ndarray, H: np.ndarray,
     return warped
 
 
-def compute_canvas_size(images: list[np.ndarray],
-                        homographies: list[np.ndarray]) -> tuple[int, int]:
-    """计算拼接画布的尺寸"""
-    if not images or not homographies:
-        return (0, 0)
-
-    # 初始画布大小 = 第一张图
-    h, w = images[0].shape[:2]
-    corners = np.float32([[0, 0], [w, 0], [w, h], [0, h]]).reshape(-1, 1, 2)
-
-    all_corners = [corners]
-    for H in homographies[1:]:
-        transformed = cv2.perspectiveTransform(corners, H)
-        all_corners.append(transformed)
-
-    all_corners = np.vstack(all_corners)
-    x_min, y_min = all_corners.min(axis=0).ravel()
-    x_max, y_max = all_corners.max(axis=0).ravel()
-
-    # 偏移量
-    canvas_w = int(np.ceil(x_max - x_min))
-    canvas_h = int(np.ceil(y_max - y_min))
-    return (canvas_w, canvas_h)
-
-
 def stitch_sequential(images: list[np.ndarray],
                       homographies: list[np.ndarray],
                       use_blend: bool = True) -> np.ndarray:

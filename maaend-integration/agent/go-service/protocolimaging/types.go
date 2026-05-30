@@ -1,44 +1,46 @@
 package protocolimaging
 
-import "github.com/bytedance/sonic"
-
-// CapturePreset 预设采集模式
-type CapturePreset string
-
-const (
-    CapturePresetSmall  CapturePreset = "small"   // 小型基地 2x2
-    CapturePresetMedium CapturePreset = "medium"  // 中型基地 3x3
-    CapturePresetLarge  CapturePreset = "large"   // 大型基地 4x4
-    CapturePresetXLarge CapturePreset = "xlarge"  // 超大基地 5x5
-)
-
-// CaptureParams 采集参数
-type CaptureParams struct {
-    Preset      CapturePreset `json:"preset,omitempty"`
-    SkipBlur    bool          `json:"skip_blur,omitempty"`
-    BlurThreshold float64      `json:"blur_threshold,omitempty"`
-    UseFusion   bool          `json:"use_fusion,omitempty"`
-    UseOpenStitching bool      `json:"use_openstitching,omitempty"`
+// CaptureGridParams 网格采集参数
+type CaptureGridParams struct {
+	Rows        int    `json:"rows"`         // 网格行数
+	Cols        int    `json:"cols"`         // 网格列数
+	PanDuration int    `json:"pan_duration"` // 每步移动时长 (ms)
+	ZoomSteps   int    `json:"zoom_steps"`   // 拉远视角的滚轮步数
+	OutputDir   string `json:"output_dir"`   // 截图输出目录
+	SkipBlur    bool   `json:"skip_blur"`    // 跳过模糊帧
+	BlurThreshold float64 `json:"blur_threshold"` // 模糊阈值
 }
 
-// DefaultCaptureParams 默认参数
-func DefaultCaptureParams() CaptureParams {
-    return CaptureParams{
-        Preset:      CapturePresetMedium,
-        SkipBlur:    true,
-        BlurThreshold: 100.0,
-        UseFusion:   true,
-        UseOpenStitching: false,
-    }
+// DefaultCaptureGridParams 默认网格采集参数（3×3 medium 预设）
+func DefaultCaptureGridParams() CaptureGridParams {
+	return CaptureGridParams{
+		Rows:          3,
+		Cols:          3,
+		PanDuration:   350,
+		ZoomSteps:     10,
+		OutputDir:     "pi_frames",
+		SkipBlur:      true,
+		BlurThreshold: 100.0,
+	}
 }
 
-// ActionParams 动作参数（来自 Maa Framework）
-type ActionParams struct {
-    Capture  CaptureParams `json:"capture,omitempty"`
-    OutputPath string       `json:"output_path,omitempty"`
+// StitchParams 拼接参数
+type StitchParams struct {
+	FramesDir       string `json:"frames_dir"`       // 截图目录
+	OutputPath      string `json:"output_path"`      // 输出路径
+	UseFusion       bool   `json:"use_fusion"`       // 羽化融合
+	SkipBlur        bool   `json:"skip_blur"`        // 跳过模糊帧
+	BlurThreshold   float64 `json:"blur_threshold"`  // 模糊阈值
+	UseOpenStitching bool  `json:"use_openstitching"` // 使用 OpenStitching
 }
 
-func (p ActionParams) String() string {
-    b, _ := sonic.Marshal(p)
-    return string(b)
+// DefaultStitchParams 默认拼接参数
+func DefaultStitchParams() StitchParams {
+	return StitchParams{
+		FramesDir:     "pi_frames",
+		OutputPath:    "base_panorama.png",
+		UseFusion:     true,
+		SkipBlur:      true,
+		BlurThreshold: 100.0,
+	}
 }

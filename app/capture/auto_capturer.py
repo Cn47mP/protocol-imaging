@@ -5,8 +5,13 @@
 
 import time
 import logging
-import winsound
 from collections.abc import Callable
+
+try:
+    import winsound
+    _HAS_WINSOUND = True
+except ImportError:
+    _HAS_WINSOUND = False
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -86,10 +91,12 @@ class AutoCapturer:
             self._log_callback(msg)
 
     def _beep_captured(self):
-        winsound.Beep(1000, 60)
+        if _HAS_WINSOUND:
+            winsound.Beep(1000, 60)
 
     def _beep_blurry(self):
-        winsound.Beep(400, 80)
+        if _HAS_WINSOUND:
+            winsound.Beep(400, 80)
 
     def _notify_progress(self, done: int, total: int):
         if self._progress_callback:

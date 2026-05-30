@@ -9,10 +9,13 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 from app.capture.window_capture import WindowCapture
 from app.capture.auto_capturer import AutoCapturer, CaptureGrid, CAPTURE_PRESETS
 from app.control.game_controller import GameController
-from app.image.stitch import stitch_sequential
+from app.image.align import auto_align
+from app.image.stitch import stitch_sequential, stitch_with_openstitching
 from app.export.png_export import export_png
 
 LOG_PATH = Path("logs/protocol-imaging.log")
@@ -67,12 +70,19 @@ def run_auto_mode(
     print(f"[协议映射] 采集完成，共 {len(frames)} 帧，拼接中...")
 
     img_list = [f.image for f in frames]
-    stitched, stitched_annotated, _ = stitch_sequential(
-        img_list,
-        auto_align=True,
-        use_fusion=use_fusion,
-        use_openstitching=use_openstitching,
-    )
+
+    if use_openstitching:
+        stitched = stitch_with_openstitching(img_list)
+    else:
+        # 计算相邻帧的累积单应性矩阵
+        homographies = [np.eye(3, dtype=np.float64)]  # 第一帧为单位矩阵
+        for i in range(1, len(img_list)):
+            H = auto_align(img_list[i], img_list[0])
+            if H is None:
+                print(f"[协议映射 · 警告] 第 {i} 帧对齐失败，使用平移近似", file=sys.stderr)
+                H = np.eye(3, dtype=np.float64)
+            homographies.append(H)
+        stitched = stitch_sequential(img_list, homographies, use_blend=use_fusion)
 
     if stitched is None:
         print("[协议映射 · 错误] 拼接失败", file=sys.stderr)

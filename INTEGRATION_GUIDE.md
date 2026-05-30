@@ -1,114 +1,114 @@
-# 协议映射全景图工具 - MaaEnd 集成指南
+# 协议映射 — MaaEnd 集成指南
 
-## 概述
+## 架构概览
 
-本项目（protocol-imaging）已完全适配 MaaEnd，可以作为独立工具运行，也可以完全集成到 MaaEnd 的任务系统中！
+协议映射采用三层架构，遵循 MaaEnd 的 "Pipeline 管流程，Go 管难点" 原则：
 
-## 方案一：完全集成到 MaaEnd（推荐）
+```
+Pipeline JSON — 流程编排
+  ├─ CharacterControllerPitchDeltaAction 拉远视角
+  ├─ ProtocolImagingCaptureGrid → Go Custom Action（网格采集）
+  └─ ProtocolImagingStitch → Go Custom Action（调 Python 拼接）
 
-### 1. 复制文件到 MaaEnd 仓库
+Go Service — 采集 + 调用
+  ├─ CaptureGridAction: CharacterController 移动 + MaaFramework 截图
+  └─ StitchAction: subprocess → python -m app frames/ --output result.py
 
-```bash
-# 假设你的 MaaEnd 仓库在 ../MaaEnd
-cp -r maaend-integration/agent/go-service/protocolimaging ../MaaEnd/agent/go-service/
-cp -r maaend-integration/assets/resource/pipeline/ProtocolImaging.json ../MaaEnd/assets/resource/pipeline/
-cp -r maaend-integration/assets/tasks/ProtocolImaging.json ../MaaEnd/assets/tasks/
-cp -r . ../MaaEnd/tools/protocolimaging/
+Python CLI — 纯图像处理
+  └─ 读取截图 → ORB 对齐 → 羽化融合拼接 → 导出 PNG
 ```
 
-### 2. 更新 MaaEnd 的 Go 服务注册
+## 集成步骤
 
-编辑 `../MaaEnd/agent/go-service/register.go`：
+### 1. 将 Go Service 添加到 MaaEnd
+
+```bash
+# 复制 Go service 代码
+cp -r maaend-integration/agent/go-service/protocolimaging/ \
+  ../MaaEnd/agent/go-service/protocolimaging/
+```
+
+在 `../MaaEnd/agent/go-service/register.go` 中添加：
 
 ```go
-import (
-    // ... 其他导入
-    "github.com/MaaXYZ/MaaEnd/agent/go-service/protocolimaging"
-)
+import "github.com/MaaXYZ/MaaEnd/agent/go-service/protocolimaging"
 
 func registerAll() {
     // ... 其他注册
-    protocolimaging.Register() // 添加这一行！
+    protocolimaging.Register()
 }
 ```
 
-### 3. 更新 MaaEnd 的界面配置（可选）
-
-如果需要让用户能在 MaaEnd 界面中选择「基地全景图采集」任务，可以编辑界面配置文件（在 `assets` 目录下）。
-
-### 4. 重新编译 MaaEnd
+### 2. 将 Pipeline 和 Task JSON 添加到 MaaEnd
 
 ```bash
-cd ../MaaEnd
-tools/build_and_install.py
+# Pipeline 定义
+cp maaend-integration/assets/resource/pipeline/ProtocolImaging.json \
+  ../MaaEnd/assets/resource/pipeline/
+
+# Task 定义
+cp maaend-integration/assets/tasks/ProtocolImaging.json \
+  ../MaaEnd/assets/tasks/
 ```
 
----
+### 3. 添加国际化文案
 
-## 方案二：作为独立工具使用
+在 `../MaaEnd/assets/locales/interface/zh_cn.json` 和 `en_us.json` 中添加 `task.ProtocolImaging.*` 条目（详见 `maaend-integration/assets/locales/`）。
 
-### 安装依赖
+### 4. 将 Python 工具放到 MaaEnd 的 tools 目录
 
 ```bash
+# 将整个 protocol-imaging 仓库放到 MaaEnd 的 tools 目录
+cp -r . ../MaaEnd/tools/protocolimaging/
+
+# 安装 Python 依赖
+cd ../MaaEnd/tools/protocolimaging
 pip install -r requirements.txt
 ```
 
-### 运行 GUI 模式
-```bash
-python -m app.main
-```
+### 5. 在 interface.json 中注册任务
 
-### 运行 CLI 自动模式
-```bash
-python -m app.main --mode auto --preset medium --skip-blur --use-fusion --output my_base.png
-```
-
----
-
-## MaaEnd 任务使用方式
-
-在 MaaEnd 中选择并运行 `ProtocolImaging` 任务，它会自动：
-
-1. 找到并激活终末地窗口
-2. 拉远视角
-3. 按照 3x3 网格自动移动和采集
-4. 自动拼接
-5. 导出到 `base_panorama.png`
-
----
-
-## 自定义参数
-
-你可以直接修改 `assets/resource/pipeline/ProtocolImaging.json` 中的参数：
+在 `../MaaEnd/assets/interface.json` 的 `import` 数组中添加：
 
 ```json
-{
-    "ProtocolImagingStart": {
-        "custom_action_param": {
-            "capture": {
-                "preset": "medium",  // 可选 small/medium/large/xlarge
-                "skip_blur": true,
-                "blur_threshold": 100.0,
-                "use_fusion": true,
-                "use_openstitching": false
-            }
-        }
-    }
-}
+"tasks/ProtocolImaging.json"
 ```
 
----
+### 6. 重新编译 MaaEnd
 
-## 技术细节
+```bash
+cd ../MaaEnd
+python tools/build_and_install.py
+```
 
-### Go 服务 Custom Action 模块
+## Pipeline 节点说明
 
-- `types.go`: 定义参数类型和预设
-- `action.go`: 核心执行逻辑，调用 Python CLI
-- `register.go`: 注册 Custom Action 到 Maa Framework
+| 节点 | 类型 | 说明 |
+|------|------|------|
+| `ProtocolImagingStart` | 入口 | 流程起点 |
+| `ProtocolImagingZoomOut` | CharacterControllerPitchDeltaAction | 拉远视角到俯视角度 |
+| `ProtocolImagingCaptureGrid` | Custom Action (Go) | 蛇形网格采集截图到目录 |
+| `ProtocolImagingStitch` | Custom Action (Go) | 调 Python CLI 拼接截图 |
+| `ProtocolImagingEnd` | 终点 | 流程结束 |
 
-### Python 模块结构
+## 用户选项
 
-- `app.control.game_controller`: Win32 API 调用 SendInput（参考 Maa Framework）
-- `app.capture.auto_capturer`: 网格采集逻辑
-- `app.main`: 入口，支持 GUI 和 CLI 两种模式
+| 选项 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| 网格大小 | select | Medium (3×3) | Small/Large/XLarge |
+| 羽化融合 | switch | Yes | 高斯羽化融合减少接缝 |
+
+## 需要实测校准的参数
+
+| 参数 | 当前值 | 说明 |
+|------|--------|------|
+| `pitch_delta` | 60 | 拉远视角角度，需实测 |
+| `pan_duration` | 350ms | 每步移动时长，需实测 |
+| 移动步长 | 由 CharacterController 决定 | `ForwardAxisAction` 的 axis × 100ms |
+
+## 独立使用（不依赖 MaaEnd）
+
+```bash
+pip install -r requirements.txt
+python -m app.main --preset medium --use-fusion --output base_panorama.png
+```

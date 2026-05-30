@@ -1,0 +1,12 @@
+{
+    "task.ProtocolImaging.label": "📷基地全景图采集",
+    "task.ProtocolImaging.description": "自动采集基地俯视图并拼接为全景图。需要先进入基地场景。",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.label": "网格大小",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.description": "采集网格的行列数，越大覆盖范围越广但耗时越长",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Small.label": "小 (2×2)",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Medium.label": "中 (3×3)",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.Large.label": "大 (4×4)",
+    "task.ProtocolImaging.option.ProtocolImagingGridSize.cases.XLarge.label": "超大 (5×5)",
+    "task.ProtocolImaging.option.ProtocolImagingUseFusion.label": "羽化融合",
+    "task.ProtocolImaging.option.ProtocolImagingUseFusion.description": "使用高斯羽化融合拼接，减少接缝可见度"
+}

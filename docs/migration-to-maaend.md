@@ -1,6 +1,6 @@
 # 协议映射 → MaaEnd 迁移路线
 
-> 2026-05-29
+> 2026-05-29（归档：迁移已完成）
 
 ## 背景
 
@@ -13,6 +13,8 @@
 - MaaEnd 有 3.1k star 的用户社区和 web 前端分发渠道，独立 pyinstaller exe 分发效率远不如它
 
 因此决定：**将全景成像功能作为 MaaEnd 的一个组件实现，protocol-imaging 仓库转为资产储备和迁移文档载体。**
+
+> **状态**：迁移已完成。Go Service + Pipeline 已按 MaaEnd 规范实现，Python CLI 已重构为纯图像处理入口。代码已集成到 MaaEnd 仓库，本文档保留作为历史参考。
 
 ## 架构对比
 
@@ -59,7 +61,7 @@
 
 ## 实施路线
 
-### Phase 1：提取 Python CLI 工具（1-2 天）
+### Phase 1：提取 Python CLI 工具（1-2 天） ✅ 已完成
 
 **目标**：把图像处理管线打包成独立的命令行工具，输入是截图目录，输出是全景 PNG。
 
@@ -80,9 +82,9 @@ CLI 用法：
 python -m panoramic-stitch frames/ --output result.png --blend --blur-threshold 100
 ```
 
-**交付物**：一个可被 MaaEnd 通过 subprocess 调用的独立 Python 包。
+**交付物**：CLI 工具保留在 `app/` 目录中，MaaEnd 的 Go service 通过 `python -m app` 调用。未拆为独立包。
 
-### Phase 2：编写 MaaFramework Pipeline（2-3 天）
+### Phase 2：编写 MaaFramework Pipeline（2-3 天） ✅ 已完成（已按 MaaEnd 规范重写）
 
 **目标**：用 Pipeline JSON 定义自动网格采集流程。
 
@@ -131,7 +133,7 @@ Pipeline 流程设计：
 
 **交付物**：一个可工作的大地图采集 Pipeline JSON 配置。
 
-### Phase 3：编写 Go Service（1-2 天）
+### Phase 3：编写 Go Service（1-2 天） ✅ 已完成
 
 **目标**：参照 MaaEnd 现有 Go service（如 `autoecofarm`、`autosell`）的模式，创建 `panoramic-capture` service。
 
@@ -147,7 +149,7 @@ agent/go-service/panoramiccapture/
 
 **交付物**：MaaEnd 中可注册和调度的全景采集 service。
 
-### Phase 4：Web GUI 集成（2-3 天）
+### Phase 4：Web GUI 集成（2-3 天） ⏳ 待后续
 
 **目标**：在 MaaEnd 的 web 前端添加全景采集入口。
 
