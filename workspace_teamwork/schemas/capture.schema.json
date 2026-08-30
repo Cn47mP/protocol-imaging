@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://protocol-imaging.local/schemas/capture.schema.json",
+  "title": "Protocol Imaging Frozen Capture Contract v1",
+  "type": "object",
+  "required": ["schema_version", "request", "environment", "limits", "calibrations"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "request": {
+      "type": "object",
+      "required": [
+        "version",
+        "frozen_at",
+        "imaging_mode",
+        "quality_level",
+        "target_overlap",
+        "burst_policy",
+        "diagnostics",
+        "generate_panorama",
+        "generate_pyramid"
+      ],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "frozen_at": { "type": "string", "format": "date-time" },
+        "imaging_mode": { "$ref": "#/$defs/stableId" },
+        "quality_level": { "$ref": "#/$defs/stableId" },
+        "target_overlap": {
+          "type": "object",
+          "required": ["horizontal", "vertical"],
+          "properties": {
+            "horizontal": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "vertical": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
+          },
+          "additionalProperties": true
+        },
+        "burst_policy": { "enum": ["none", "selected", "all"] },
+        "diagnostics": { "enum": ["standard", "full"] },
+        "generate_panorama": { "type": "boolean" },
+        "generate_pyramid": { "type": "boolean" }
+      },
+      "allOf": [{ "$ref": "#/$defs/noLaterGeometryFields" }],
+      "additionalProperties": true
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "observed_at",
+        "controller_kind",
+        "raw_frame_size",
+        "input_viewport",
+        "effective_crop",
+        "dpi_scale",
+        "window",
+        "game_version"
+      ],
+      "properties": {
+        "observed_at": { "type": "string", "format": "date-time" },
+        "controller_kind": { "$ref": "#/$defs/stableId" },
+        "raw_frame_size": { "$ref": "#/$defs/pixelDimensions" },
+        "input_viewport": { "$ref": "#/$defs/size" },
+        "effective_crop": { "$ref": "#/$defs/rect" },
+        "dpi_scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 16 },
+        "window": {
+          "type": "object",
+          "required": ["process_name", "class_name", "title_hash", "client_size"],
+          "properties": {
+            "process_name": { "type": "string", "minLength": 1 },
+            "class_name": { "type": "string", "minLength": 1 },
+            "title_hash": { "type": "string", "minLength": 1 },
+            "client_size": { "$ref": "#/$defs/pixelDimensions" }
+          },
+          "additionalProperties": true
+        },
+        "game_version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "max_rows",
+        "max_columns",
+        "max_tiles",
+        "max_travel",
+        "max_duration_seconds",
+        "max_disk_bytes",
+        "max_step_retries"
+      ],
+      "properties": {
+        "max_rows": { "type": "integer", "minimum": 1 },
+        "max_columns": { "type": "integer", "minimum": 1 },
+        "max_tiles": { "type": "integer", "minimum": 1 },
+        "max_travel": { "type": "number", "exclusiveMinimum": 0 },
+        "max_duration_seconds": { "type": "integer", "minimum": 1 },
+        "max_disk_bytes": { "type": "integer", "minimum": 1 },
+        "max_step_retries": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "calibrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "actions",
+          "horizontal_motion",
+          "vertical_motion",
+          "effective_viewport",
+          "input_to_raw",
+          "raw_to_session",
+          "confidence"
+        ],
+        "properties": {
+          "id": { "$ref": "#/$defs/stableId" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["purpose", "input_delta", "measured_raw_delta", "evidence_ids"],
+              "properties": {
+                "purpose": { "$ref": "#/$defs/stableId" },
+                "input_delta": { "$ref": "#/$defs/vector" },
+                "measured_raw_delta": { "$ref": "#/$defs/vector" },
+                "evidence_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "$ref": "#/$defs/stableId" }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "horizontal_motion": { "$ref": "#/$defs/vector" },
+          "vertical_motion": { "$ref": "#/$defs/vector" },
+          "effective_viewport": { "$ref": "#/$defs/rect" },
+          "input_to_raw": { "$ref": "#/$defs/affine" },
+          "raw_to_session": { "$ref": "#/$defs/affine" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "invalidated_at": { "type": "string", "format": "date-time" },
+          "invalidation_reason": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "allOf": [{ "$ref": "#/$defs/noLaterGeometryFields" }],
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "pixelDimensions": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+      },
+      "additionalProperties": true
+    },
+    "size": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "rect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "vector": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "affine": {
+      "type": "object",
+      "required": ["a", "b", "c", "d", "tx", "ty"],
+      "properties": {
+        "a": { "type": "number" },
+        "b": { "type": "number" },
+        "c": { "type": "number" },
+        "d": { "type": "number" },
+        "tx": { "type": "number" },
+        "ty": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "noLaterGeometryFields": {
+      "not": {
+        "anyOf": [
+          { "required": ["base_id"] },
+          { "required": ["base_profile"] },
+          { "required": ["base_profile_id"] },
+          { "required": ["profile_id"] },
+          { "required": ["expected_width"] },
+          { "required": ["expected_height"] },
+          { "required": ["expected_rows"] },
+          { "required": ["expected_columns"] },
+          { "required": ["map_width"] },
+          { "required": ["map_height"] },
+          { "required": ["map_size"] }
+        ]
+      }
+    }
+  },
+  "additionalProperties": true
+}

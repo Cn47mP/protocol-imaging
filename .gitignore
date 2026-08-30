@@ -1,0 +1,24 @@
+# Capture projects and generated imagery
+*.pimap
+*.pimap.tmp
+captures/
+exports/
+
+# Local application state
+.protocol-imaging/
+*.autosave
+
+# Go
+bin/
+coverage.out
+.cache/
+
+# Node and Wails frontend
+node_modules/
+dist/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

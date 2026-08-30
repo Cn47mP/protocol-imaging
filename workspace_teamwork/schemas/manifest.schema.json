@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://protocol-imaging.local/schemas/manifest.schema.json",
+  "title": "Protocol Imaging Project Manifest v1",
+  "type": "object",
+  "required": [
+    "format",
+    "format_version",
+    "project_id",
+    "title",
+    "created_at",
+    "updated_at",
+    "game_version",
+    "profile",
+    "geometry",
+    "coordinate_system",
+    "capture_state",
+    "capture",
+    "layers",
+    "annotations"
+  ],
+  "properties": {
+    "format": { "const": "protocol-imaging-project" },
+    "format_version": { "const": 1 },
+    "project_id": { "$ref": "#/$defs/stableId" },
+    "title": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "game_version": { "type": "string", "minLength": 1 },
+    "profile": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["id", "snapshot"],
+          "properties": {
+            "id": { "$ref": "#/$defs/stableId" },
+            "snapshot": { "$ref": "#/$defs/archivePath" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "geometry": {
+      "type": "object",
+      "required": ["status", "source", "observation", "coordinate_compatibility"],
+      "properties": {
+        "status": { "enum": ["discovering", "observed_local", "unresolved"] },
+        "source": { "const": "dynamic_boundary_observation" },
+        "observation": { "$ref": "#/$defs/archivePath" },
+        "coordinate_compatibility": { "const": "session_local" }
+      },
+      "additionalProperties": true
+    },
+    "coordinate_system": {
+      "type": "object",
+      "required": ["space_id", "unit", "axis"],
+      "properties": {
+        "space_id": { "type": "string", "pattern": "^session:[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+        "unit": { "const": "reference_layer_pixel" },
+        "axis": { "const": "x_right_y_down" }
+      },
+      "additionalProperties": true
+    },
+    "capture_state": {
+      "enum": [
+        "created",
+        "homing",
+        "calibrating",
+        "capturing",
+        "repairing",
+        "processing",
+        "complete",
+        "cancelled",
+        "failed_recoverable",
+        "failed_corrupt"
+      ]
+    },
+    "capture": { "$ref": "#/$defs/archivePath" },
+    "active_calibration": { "$ref": "#/$defs/stableId" },
+    "active_plan": { "$ref": "#/$defs/archivePath" },
+    "active_version": { "$ref": "#/$defs/stableId" },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path"],
+        "properties": {
+          "id": { "$ref": "#/$defs/stableId" },
+          "path": { "$ref": "#/$defs/archivePath" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "annotations": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/archivePath" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "capture_state": { "const": "complete" } }, "required": ["capture_state"] },
+      "then": {
+        "required": ["active_calibration", "active_plan", "active_version"],
+        "properties": {
+          "geometry": {
+            "properties": { "status": { "const": "observed_local" } },
+            "required": ["status"]
+          },
+          "layers": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "archivePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*:)[^\\u0000]+$"
+    }
+  },
+  "additionalProperties": true
+}

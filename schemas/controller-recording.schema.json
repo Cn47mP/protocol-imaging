@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://protocol-imaging.local/schemas/controller-recording.schema.json",
+  "title": "Protocol Imaging Controller Recording v1",
+  "type": "object",
+  "required": ["format", "schema_version", "created_at", "operations"],
+  "properties": {
+    "format": { "const": "protocol-imaging-controller-recording" },
+    "schema_version": { "const": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "operations": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "type": "object",
+        "required": ["sequence", "kind"],
+        "properties": {
+          "sequence": { "type": "integer", "minimum": 0 },
+          "kind": { "enum": ["capture_raw", "scroll", "middle_drag", "input_viewport", "release"] },
+          "frame": {
+            "type": "object",
+            "required": ["id", "captured_at", "size", "path", "sha256"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "captured_at": { "type": "string", "format": "date-time" },
+              "size": { "$ref": "#/$defs/pixelSize" },
+              "path": { "type": "string", "pattern": "^frames/frame-[0-9]{6}\\.png$" },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            },
+            "additionalProperties": false
+          },
+          "scroll": {
+            "type": "object",
+            "required": ["delta_x", "delta_y"],
+            "properties": {
+              "delta_x": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+              "delta_y": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 }
+            },
+            "additionalProperties": false
+          },
+          "drag": {
+            "type": "object",
+            "required": ["gesture"],
+            "properties": {
+              "gesture": {
+                "type": "object",
+                "required": ["begin", "end", "duration_ns"],
+                "properties": {
+                  "begin": { "$ref": "#/$defs/point" },
+                  "end": { "$ref": "#/$defs/point" },
+                  "duration_ns": { "type": "integer", "minimum": 1 }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "viewport": { "$ref": "#/$defs/pixelSize" },
+          "error": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "pixelSize": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+      },
+      "additionalProperties": false
+    },
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
